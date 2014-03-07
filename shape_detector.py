@@ -23,6 +23,7 @@ class Chord:
         # a vector point from pt to the center of contour
         pt_center = (center-pt)[0]
         dx, dy = (next-prev)[0]
+        #tangent = (next-prev)[0]
         # there are two normals
         # need to pick the one point to the center
         normal1 = (-dy,dx)
@@ -30,11 +31,9 @@ class Chord:
 
         # dot product
         dp1 = dotproduct(normal1, pt_center)
-        if dp1 >= 0.0:
-            print angle(normal1, self.chord)
+        if dp1 >=0.0:
             return angle(normal1, pt_center)
         else:
-            print angle(normal2, self.chord)
             return angle(normal2, pt_center)
 
     def get_orientation(self,cnt_centroid):
@@ -52,6 +51,8 @@ class Chord:
 
 class ShapeDetector:
 
+    SAMPLE_SIZE = 16
+
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
 
     MORPH_DIM = (3,3)
@@ -66,14 +67,13 @@ class ShapeDetector:
     EPS = 0.0001                    # used to prevent the zero case when computing log
 
     # used to build chordiogram
-    ANGLE_BINS1 = [x*math.pi for x in np.arange(0,0.5,0.03124999)]
+    ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,0.5,0.03124999)]
 
-    ANGLE_BINS2 = [x*math.pi for x in np.arange(0,0.5,0.03124999)]
+    ANGLE_BINS_TWO = [x*math.pi for x in np.arange(0,1,0.124999)]
 
     LENGTH_BINS = [math.log(x) for x in [1., 6.28, 39.44, 247.67, 1555.38]]
-    SAMPLE_SIZE = 8*8*8
 
-    NUM_CLASS = 3
+    NUM_CLASS = 2
 
     NESTED_CONTOUR_DISTANCE = 10    #if a two contours are nested and their boundaries
                                     # are within 10px then remove the innner conotur
@@ -170,7 +170,6 @@ class ShapeDetector:
             # strech chordiogram to one dimensional
             chordiogram_1d = np.reshape(chordiogram[0], (1, self.SAMPLE_SIZE))
             chordiogram_1d = chordiogram_1d/float(len(chords))
-            print chordiogram_1d
             #pdb.set_trace()
             cv2.imshow('norm',color_img)
             key = cv2.waitKey(0)
@@ -196,10 +195,7 @@ class ShapeDetector:
         contours = self.filter_contours(contours)
         print len(contours)
         for cnt in contours:
-            [x,y,w,h] = cv2.boundingRect(cnt)
-            print w,h
-            chords = self.get_chords(cnt)
-            features = self.get_feature_helper(chords)
+            features = self.get_feature_helper(cnt)
             samples = np.append(samples, features, 0)
 
         responses = [img_class]*len(samples)
@@ -210,6 +206,25 @@ class ShapeDetector:
         np.savetxt('TrainingResponses/tmp_responses.data',responses)
         self.append_result_to_file()
 
+    def get_feature_helper(self, cnt):
+        chords = self.get_chords(cnt)
+        features = []
+        for chord in chords:
+            l = chord.length
+            o = chord.orientation_angle
+            n1 = chord.pt1_normal_angle
+            n2 = chord.pt2_normal_angle
+            features.append([o])
+        #chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_ONE, self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO]))
+        chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_ONE]))
+        # strech chordiogram to one dimensional
+        # pdb.set_trace()
+
+        chordiogram_1d = np.reshape(chordiogram, (1, self.SAMPLE_SIZE))
+        chordiogram_1d = chordiogram_1d/float(len(chords))
+        return chordiogram_1d
+
+    # maybe use a better method
     def append_result_to_file(self):
         with open("TrainingResponses/generalresponses.data", "a") as f1:
             with open("TrainingResponses/tmp_responses.data", "r") as f2:
@@ -239,19 +254,6 @@ class ShapeDetector:
             chords.append(chord)
         return chords
 
-    def get_feature_helper(self, chords):
-        features = []
-        for chord in chords:
-            o = chord.orientation_angle
-            n1 = chord.pt1_normal_angle
-            n2 = chord.pt2_normal_angle
-            features.append([o,n1,n2])
-        chordiogram, edges = np.histogramdd(np.array(features), bins = (8,8,8))
-        pdb.set_trace()
-        # strech chordiogram to one dimensional
-        chordiogram_1d = np.reshape(chordiogram[0], (1, self.SAMPLE_SIZE))
-        chordiogram_1d = chordiogram_1d/float(len(chords))
-        return chordiogram_1d
 
     def draw_chords(self, img, chord, cnt_centroid):
         NORMAL_FACTOR = 0.1
@@ -376,8 +378,8 @@ class ShapeDetector:
         contours = self.filter_contours(contours)
         for cnt in contours:
             [x,y,w,h] = cv2.boundingRect(cnt)
-            chordiogram = self.get_contour_info(cnt)
-            print chordiogram
+            chordiogram = self.get_feature_helper(cnt)
+            #print chordiogram
             #pdb.set_trace()
             chordiogram = np.array(chordiogram,np.float32)
             shape_class = svm.predict(chordiogram)
@@ -398,7 +400,6 @@ def midpoint(p1, p2):
 
 def normalize(v):
     return v/np.linalg.norm(v)
-    #return v
 
 def dist(p1,p2):
     return np.linalg.norm(p1-p2)
@@ -414,17 +415,16 @@ def length(v):
   return math.sqrt(dotproduct(v, v))
 
 def angle(v1, v2):
-    v1 = normalize(v1)
-    v2 = normalize(v2)
     cosine = dotproduct(v1, v2) / (length(v1) * length(v2)+0.0001)
-    return math.acos(min(1,max(cosine,-1)))
+    # print math.acos(cosine)/math.pi*180
+    return math.acos(cosine)
 
 def withinDistance(p1, p2, distance):
     return p1 >= p2 and p1-p2 <= distance
 
 sd = ShapeDetector()
-sd.get_training_data2()
+#sd.get_training_data2()
 #sd.get_training_data_from_img('train/0.jpg')
 
 svm = sd.train_classifier()
-sd.test_classifier('test/2.jpg', svm)
+sd.test_classifier('test/7.jpg', svm)
