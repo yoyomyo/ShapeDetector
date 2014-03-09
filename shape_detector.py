@@ -124,7 +124,7 @@ class ShapeDetector:
 
 
     def get_training_data2(self, dir):
-        for i in range(0,self.NUM_CLASS):
+        for i in range(1,self.NUM_CLASS):
             dir_name = dir+str(i)+'/'
             # print dir_name
             for root, subdirs, files in os.walk(dir_name):
@@ -226,7 +226,7 @@ class ShapeDetector:
         np.savetxt('TrainingResponses/tmp_responses.data',responses)
 
     # parameter used in this function:
-    def get_features(self, color_img, bw_img, img_class):
+    def  get_features(self, color_img, bw_img, img_class):
         samples = np.empty((0,self.SAMPLE_SIZE))
 
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
@@ -240,16 +240,60 @@ class ShapeDetector:
             #     if i%1000 == 0:
             #         self.draw_chords(color_img, c, centroid)
             # self.show_image_in_window('c', color_img)
-            features = self.get_feature_helper(cnt)
-            samples = np.append(samples, features, 0)
+            previous_gradient = None
+            diffs = []
+            mask = np.zeros(bw_img.shape,np.uint8)
+            count = 0
+            for i,pt in enumerate(cnt):
+                prev= cnt[(i-1)%len(cnt)],    # if first or last pair,
+                nxt= cnt[(i+1)%len(cnt)],    # wrap around contour to find two nearest points
+                gradient = self.get_gradient_angle(prev, nxt)
+                #if i %500 == 0:
+                #    cv2.line(color_img, tuple(prev[0][0]), tuple(nxt[0][0]), self.RED)
 
-        responses = [img_class]*len(samples)
-        responses = np.array(responses,np.float32)
-        responses = responses.reshape((responses.size,1))
+                if not previous_gradient:
+                    previous_gradient = gradient
+                else:
+                    # compute gradient angle diff
+                    diff = previous_gradient-gradient
+                    if math.fabs(diff-2*math.pi) < 0.2:
+                        diff = 0
+                    c = diff*255
+                    #print previous_gradient, gradient
+                    diffs.append(diff)
+                    cv2.line(mask, tuple(prev[0][0]), tuple(nxt[0][0]), (c,c,c), thickness=1, lineType=8, shift=0)
+                    previous_gradient = gradient
+            for j, diff in enumerate(diffs):
+                is_max = True
+                for n in range(-2,3):
+                    if n == 0: continue
+                    is_max = is_max and diff >= diffs[(j+n)%len(diffs)]
+                if is_max:
+                    #print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
+                    # compute the gradient diffs of the max points again and find the inflection point
+                    cv2.circle(mask, tuple(cnt[j][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
+                    count+=1
+            print count
+            self.show_image_in_window('c', mask)
 
-        np.savetxt('TrainingResponses/tmp_samples.data',samples)
-        np.savetxt('TrainingResponses/tmp_responses.data',responses)
-        self.append_result_to_file()
+        #     features = self.get_feature_helper(cnt)
+        #     samples = np.append(samples, features, 0)
+        #
+        # responses = [img_class]*len(samples)
+        # responses = np.array(responses,np.float32)
+        # responses = responses.reshape((responses.size,1))
+        #
+        # np.savetxt('TrainingResponses/tmp_samples.data',samples)
+        # np.savetxt('TrainingResponses/tmp_responses.data',responses)
+        # self.append_result_to_file()
+    def get_gradient_angle(self, prev, nxt):
+        tangent = nxt[0] - prev[0]
+        dx,dy = tangent[0]
+        a1 = math.atan2(dy,dx)
+        if a1 < 0:
+            return a1 + 2*math.pi
+        else:
+            return a1
 
     def get_feature_helper(self, cnt):
         chords = self.get_chords(cnt)
@@ -524,5 +568,5 @@ def withinDistance(p1, p2, distance):
 sd = ShapeDetector()
 sd.get_training_data2('train/')
 
-svm = sd.train_classifier()
-sd.test_classifier('test/2.jpg', svm)
+# svm = sd.train_classifier()
+# sd.test_classifier('test/2.jpg', svm)
