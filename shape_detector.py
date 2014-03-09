@@ -13,8 +13,10 @@ class Chord:
         self.pt1 = pt1
         self.pt2 = pt2
         self.length = dist(pt1, pt2)
-        self.pt1_normal_angle = self.get_normal(pt1, pt1_prev, pt1_next, cnt_centroid)
-        self.pt2_normal_angle = self.get_normal(pt2, pt2_prev, pt2_next, cnt_centroid)
+        self.pt1_normal = self.get_normal(pt1, pt1_prev, pt1_next, cnt_centroid)
+        self.pt2_normal = self.get_normal(pt2, pt2_prev, pt2_next, cnt_centroid)
+        self.pt1_normal_angle = self.get_normal_angle(1)
+        self.pt2_normal_angle = self.get_normal_angle(2)
         self.orientation_angle = self.get_orientation()
 
     # def __init__(self, pt1, pt2, pt1_normal, pt2_normal):
@@ -28,6 +30,13 @@ class Chord:
     #     self.orientation_angle = self.get_orientation()
 
     # make sure that normal is pointing towards the inner contour
+    def get_normal_angle(self, pt):
+        if pt == 1:
+            a = angle(self.chord,self.pt1_normal)
+        elif pt == 2:
+            a = angle(self.chord,self.pt2_normal)
+        return a
+
     def get_normal(self, pt, prev, next, center):
         dx,dy = (next-prev)[0]
         pt_center = (center - pt)[0]
@@ -269,7 +278,8 @@ class ShapeDetector:
                           pt2_prev= contour[(y-1)%num_points],    # else shift the contour by 1
                           pt2_next= contour[(y+1)%num_points],    # to the left and 1 to the right
                           cnt_centroid = centroid)
-            chords.append(chord)
+            if chord.length > self.CHORD_LEN_THRESHOLD:
+                chords.append(chord)
         return chords
 
     def compute_pt_normal(self, pt, neighbor1, neighbor2):
@@ -287,8 +297,8 @@ class ShapeDetector:
         p1 = chord.pt1[0]
         p2 = chord.pt2[0]
 
-        p1_normal = chord.pt1_normal_angle * 10
-        p2_normal = chord.pt2_normal_angle * 10
+        p1_normal = chord.pt1_normal * 10
+        p2_normal = chord.pt2_normal * 10
 
         # p1_normal = np.rint(chord.pt1_normal_angle)
         # p2_normal = np.rint(chord.pt2_normal_angle/math.p)
@@ -301,12 +311,12 @@ class ShapeDetector:
 
         # draw_line(img, mid, orientation.astype(int), self.YELLOW)
 
-        # fontFace = cv2.FONT_HERSHEY_SCRIPT_SIMPLEX
-        # fontScale = 0.3
-        # txt1 = "%.2f" % (chord.pt1_normal_angle/math.pi*180)
-        # txt2 = "%.2f" % (chord.pt2_normal_angle/math.pi*180)
-        # cv2.putText(img, txt1, tuple(p1), fontFace, fontScale,self.RED, 1, 8)
-        # cv2.putText(img, txt2, tuple(p2), fontFace, fontScale,self.RED, 1, 8)
+        fontFace = cv2.FONT_HERSHEY_SCRIPT_SIMPLEX
+        fontScale = 0.3
+        txt1 = "%.2f" % (chord.pt1_normal_angle/math.pi*180)
+        txt2 = "%.2f" % (chord.pt2_normal_angle/math.pi*180)
+        cv2.putText(img, txt1, tuple(p1+[3,3]), fontFace, fontScale,self.RED, 1, 8)
+        cv2.putText(img, txt2, tuple(p2+[3,3]), fontFace, fontScale,self.RED, 1, 8)
 
     def get_contour_centroid(self, cnt):
         # compute the centroid of the contour to help compute chord normals and orientation
