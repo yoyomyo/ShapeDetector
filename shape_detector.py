@@ -13,11 +13,12 @@ class Chord:
         self.pt1 = pt1
         self.pt2 = pt2
         self.length = dist(pt1, pt2)
-        self.pt1_normal = self.get_normal(pt1, pt1_prev, pt1_next, cnt_centroid)
-        self.pt2_normal = self.get_normal(pt2, pt2_prev, pt2_next, cnt_centroid)
+        self.center = cnt_centroid
+        self.pt1_normal = self.get_normal(pt1, pt1_prev, pt1_next)
+        self.pt2_normal = self.get_normal(pt2, pt2_prev, pt2_next)
         self.pt1_normal_angle = self.get_normal_angle(1)
         self.pt2_normal_angle = self.get_normal_angle(2)
-        self.orientation_angle = self.get_orientation(cnt_centroid)
+        self.orientation_angle = self.get_orientation()
 
     # def __init__(self, pt1, pt2, pt1_normal, pt2_normal):
     #     self.chord = (pt2-pt1)[0]
@@ -31,13 +32,17 @@ class Chord:
 
     # make sure that normal is pointing towards the inner contour
     def get_normal_angle(self, pt):
+        mid_center = (self.center - self.mid)[0]
         if pt == 1:
+            sign = dotproduct(self.pt1_normal, mid_center)
             a = angle(self.chord,self.pt1_normal)
         elif pt == 2:
+            sign = dotproduct(self.pt2_normal, mid_center)
             a = angle(self.chord,self.pt2_normal)
         return a
 
-    def get_normal(self, pt, prev, next, center):
+    def get_normal(self, pt, prev, next):
+        center = self.center
         dx,dy = (next-prev)[0]
         pt_center = (center - pt)[0]
         n1 = np.array([-dy, dx])
@@ -51,13 +56,15 @@ class Chord:
     # orientation is between 0 and pi
     def get_orientation(self):
         dx,dy = self.chord
-        a = math.atan2(dy,dx)
-        if a < 0:
-            return a+2*math.pi
+        a1 = math.atan2(dy,dx)
+        a2 = math.atan2(-dy,-dx)
+        if a1 < 0:
+            return a2
         else:
-            return a
+            return a1
 
-    # def get_orientation(self,cnt_centroid):
+    # def get_orientation(self):
+    #     cnt_centroid = self.center
     #     x, y = self.chord
     #     normal1 = (-y,x)
     #     normal2 = (y,-x)
@@ -72,7 +79,7 @@ class Chord:
 
 class ShapeDetector:
 
-    SAMPLE_SIZE = 4*16*8*8
+    SAMPLE_SIZE = 4*8*8*8
 
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
 
@@ -88,14 +95,14 @@ class ShapeDetector:
     EPS = 0.0001                    # used to prevent the zero case when computing log
 
     # used to build chordiogram
-    ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,0.5,0.03125)] + [math.pi*0.5]
+    #ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,0.5,0.0625)] + [math.pi*0.5]
     ANGLE_BINS_TWO = [x*math.pi for x in np.arange(-1,1,0.25)] + [math.pi]
-    ANGLE_BINS_THREE = [x*math.pi for x in np.arange(0,2,0.25)] + [2*math.pi]
+    ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,1,0.125)] + [math.pi]
 
     #LENGTH_BINS = [math.log(x) for x in [1., 6.28, 39.44, 247.67, 1555.38]]
     LENGTH_BINS = [math.pow(10, x) for x in [-2, -1, 0, 1, 2]]
 
-    NUM_CLASS = 3
+    NUM_CLASS = 2
 
     NESTED_CONTOUR_DISTANCE = 10    #if a two contours are nested and their boundaries
                                     # are within 10px then remove the innner conotur
@@ -230,21 +237,19 @@ class ShapeDetector:
             # centroid = self.get_contour_centroid(cnt)
             # chords = self.get_chords(cnt)
             # for i, c in enumerate(chords):
-            #     if i%5000 == 0:
+            #     if i%1000 == 0:
             #         self.draw_chords(color_img, c, centroid)
             # self.show_image_in_window('c', color_img)
+            features = self.get_feature_helper(cnt)
+            samples = np.append(samples, features, 0)
 
+        responses = [img_class]*len(samples)
+        responses = np.array(responses,np.float32)
+        responses = responses.reshape((responses.size,1))
 
-        #     features = self.get_feature_helper(cnt)
-        #     samples = np.append(samples, features, 0)
-        #
-        # responses = [img_class]*len(samples)
-        # responses = np.array(responses,np.float32)
-        # responses = responses.reshape((responses.size,1))
-        #
-        # np.savetxt('TrainingResponses/tmp_samples.data',samples)
-        # np.savetxt('TrainingResponses/tmp_responses.data',responses)
-        # self.append_result_to_file()
+        np.savetxt('TrainingResponses/tmp_samples.data',samples)
+        np.savetxt('TrainingResponses/tmp_responses.data',responses)
+        self.append_result_to_file()
 
     def get_feature_helper(self, cnt):
         chords = self.get_chords(cnt)
@@ -263,7 +268,7 @@ class ShapeDetector:
             # print n1-o
             features.append([l, o, n1, n2])
         #chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO]))
-        chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.LENGTH_BINS, self.ANGLE_BINS_ONE, self.ANGLE_BINS_THREE, self.ANGLE_BINS_THREE]))
+        chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.LENGTH_BINS, self.ANGLE_BINS_ONE, self.ANGLE_BINS_ONE, self.ANGLE_BINS_ONE]))
 
         chordiogram_1d = np.reshape(chordiogram, (1, self.SAMPLE_SIZE))
         chordiogram_1d = chordiogram_1d/float(len(chords))
@@ -322,6 +327,7 @@ class ShapeDetector:
         p1_normal = chord.pt1_normal * 10
         p2_normal = chord.pt2_normal * 10
 
+        cv2.circle(img, tuple(cnt_centroid), 1, self.RED)
         # p1_normal = np.rint(chord.pt1_normal_angle)
         # p2_normal = np.rint(chord.pt2_normal_angle/math.p)
         # orientation = np.rint(chord.orientation*NORMAL_FACTOR, cnt_centroid)
@@ -492,11 +498,25 @@ def angle_old(v1, v2):
 def angle(v1, v2):
     x1, y1 = v1
     x2, y2 = v2
-    angle = math.atan2(y2, x2) - math.atan2(y1, x1)
-    if angle < 0:
-        return angle + 2*math.pi
-    else:
-        return angle
+    a1 = math.atan2(y1, x1)
+    a2 = math.atan2(y2, x2)
+
+    # first convert angles to 0 and pi range
+    a1 = math.atan2(-y1, -x1) if a1 < 0.0 else a1
+    a2 = math.atan2(-y2, -x2) if a2 < 0.0 else a2
+
+    if (a1 >= 0.5*math.pi and a2 >= 0.5*math.pi) or (a1 <= 0.5* math.pi and a2 <= 0.5*math.pi):
+        v =  math.fabs(a1-a2)
+    elif a1 >= 0.5*math.pi and a2 <= 0.5*math.pi:
+        v = min(math.pi - a1 + a2, a1-a2)
+    elif a2 >= 0.5*math.pi and a1 <= 0.5*math.pi:
+        v = min(math.pi - a2 + a1, a2-a1)
+    return v
+    #
+    # if (a1 < 0.0 and a2 < 0.0) or (a1 > 0.0 and a2 > 0.0):
+    #     return math.fabs(a1-a2)
+    # else:
+    # return a2
 
 def withinDistance(p1, p2, distance):
     return p1 >= p2 and p1-p2 <= distance
@@ -505,4 +525,4 @@ sd = ShapeDetector()
 sd.get_training_data2('train/')
 
 svm = sd.train_classifier()
-sd.test_classifier('test/7.jpg', svm)
+sd.test_classifier('test/2.jpg', svm)
