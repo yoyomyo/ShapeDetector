@@ -17,7 +17,7 @@ class Chord:
         self.pt2_normal = self.get_normal(pt2, pt2_prev, pt2_next, cnt_centroid)
         self.pt1_normal_angle = self.get_normal_angle(1)
         self.pt2_normal_angle = self.get_normal_angle(2)
-        self.orientation_angle = self.get_orientation()
+        self.orientation_angle = self.get_orientation(cnt_centroid)
 
     # def __init__(self, pt1, pt2, pt1_normal, pt2_normal):
     #     self.chord = (pt2-pt1)[0]
@@ -48,17 +48,31 @@ class Chord:
         else:
             return normalize(n2)
 
+    # orientation is between 0 and pi
     def get_orientation(self):
-        dx, dy = self.chord
+        dx,dy = self.chord
         a = math.atan2(dy,dx)
-        if a < 0.0:
+        if a < 0:
             return a+2*math.pi
         else:
             return a
 
+    # def get_orientation(self,cnt_centroid):
+    #     x, y = self.chord
+    #     normal1 = (-y,x)
+    #     normal2 = (y,-x)
+    #     mid_center = (cnt_centroid - self.mid)[0]
+    #     #return math.atan2(x, y)
+    #     # dot product
+    #     dp1 = dotproduct(mid_center, normal1)
+    #     if dp1 > 0:
+    #         return angle(normal1, mid_center)
+    #     else:
+    #         return angle(normal2, mid_center)
+
 class ShapeDetector:
 
-    SAMPLE_SIZE = 16
+    SAMPLE_SIZE = 4*16*8*8
 
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
 
@@ -74,45 +88,53 @@ class ShapeDetector:
     EPS = 0.0001                    # used to prevent the zero case when computing log
 
     # used to build chordiogram
-    ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,0.5,0.03124999)]
+    ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,0.5,0.03125)] + [math.pi*0.5]
+    ANGLE_BINS_TWO = [x*math.pi for x in np.arange(-1,1,0.25)] + [math.pi]
+    ANGLE_BINS_THREE = [x*math.pi for x in np.arange(0,2,0.25)] + [2*math.pi]
 
-    ANGLE_BINS_TWO = [x*math.pi for x in np.arange(0,2,0.1249999)]
+    #LENGTH_BINS = [math.log(x) for x in [1., 6.28, 39.44, 247.67, 1555.38]]
+    LENGTH_BINS = [math.pow(10, x) for x in [-2, -1, 0, 1, 2]]
 
-    LENGTH_BINS = [math.log(x) for x in [1., 6.28, 39.44, 247.67, 1555.38]]
-
-    NUM_CLASS = 2
+    NUM_CLASS = 3
 
     NESTED_CONTOUR_DISTANCE = 10    #if a two contours are nested and their boundaries
                                     # are within 10px then remove the innner conotur
+    CHORD_LEN_THRESHOLD = 30
 
-    CHORD_LEN_THRESHOLD = 3
-
-    def get_training_data(self, dir):
-        for root, subdirs, files in os.walk(dir):
-            for file in files:
-                if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
-                    path_to_img = os.path.join(root,file)
-                    self.get_training_data_from_img(path_to_img)
+    # def get_training_data(self, dir):
+    #     for root, subdirs, files in os.walk(dir):
+    #         for file in files:
+    #             if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
+    #                 path_to_img = os.path.join(root,file)
+    #                 self.get_training_data_from_img(path_to_img)
 
     # get shapes from image and store shape
     # information (chordiogram) in a file for training classifier
-    def get_training_data_from_img(self, path_to_img):
-        img = cv2.imread(path_to_img)
-        color, bw = self.preprocess_image(img)
-        self.get_training_samples(color, bw)
+    # def get_training_data_from_img(self, path_to_img):
+    #     img = cv2.imread(path_to_img)
+    #     color, bw = self.preprocess_image(img)
+    #     self.get_training_samples(color, bw)
+
+
+    def get_training_data2(self, dir):
+        for i in range(0,self.NUM_CLASS):
+            dir_name = dir+str(i)+'/'
+            # print dir_name
+            for root, subdirs, files in os.walk(dir_name):
+                for file in files:
+                    if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
+                        path_to_img = os.path.join(root,file)
+                        img_class = i
+                        # print path_to_img, img_class
+                        # pdb.set_trace()
+                        self.get_training_data_from_img2(path_to_img, img_class)
 
     # get shape features from img, put them into ,
     # and store relevant shape into
-    def get_training_data_from_img2(self, img_name, img_class):
-        img = cv2.imread('train/'+img_name)
+    def get_training_data_from_img2(self, path_to_img, img_class):
+        img = cv2.imread(path_to_img)
         color, bw_img = self.preprocess_image(img)
         self.get_features(color, bw_img, img_class)
-
-    def get_training_data2(self):
-        for i in range(0,self.NUM_CLASS):
-            img_name = str(i)+'.jpg'
-            img_class = i
-            self.get_training_data_from_img2(img_name, img_class)
 
     def preprocess_image(self, img):
         w,h,c = img.shape
@@ -205,19 +227,14 @@ class ShapeDetector:
         print len(contours)
 
         for h, cnt in enumerate(contours):
+            # centroid = self.get_contour_centroid(cnt)
+            # chords = self.get_chords(cnt)
+            # for i, c in enumerate(chords):
+            #     if i%5000 == 0:
+            #         self.draw_chords(color_img, c, centroid)
+            # self.show_image_in_window('c', color_img)
 
-            # mask = np.zeros(bw_img.shape,np.uint8)
-            # cv2.drawContours(mask ,[cnt], 0, 255, -1)
-            # self.show_image_in_window('mask', mask)
-            # pdb.set_trace()
-            # mask[100][100]
 
-            centroid = self.get_contour_centroid(cnt)
-            chords = self.get_chords(cnt)
-            for i, c in enumerate(chords):
-                if i%5000 == 0:
-                    self.draw_chords(color_img, c, centroid)
-            self.show_image_in_window('c', color_img)
         #     features = self.get_feature_helper(cnt)
         #     samples = np.append(samples, features, 0)
         #
@@ -231,18 +248,22 @@ class ShapeDetector:
 
     def get_feature_helper(self, cnt):
         chords = self.get_chords(cnt)
+        mean_chord_len = reduce(lambda a, c: c.length + a, chords, 0)/len(chords)
+        # min_o= reduce(lambda a,c: min(a, c.orientation_angle), chords, 2*math.pi)
+        # max_o = reduce(lambda a,c: max(a, c.orientation_angle), chords, 0)
+        # min_angle = reduce(lambda a,c: min(a, c.orientation_angle-c.pt1_normal_angle, c.orientation_angle-c.pt2_normal_angle), chords, 2*math.pi)
+        # max_angle = reduce(lambda a,c: max(a, c.orientation_angle-c.pt1_normal_angle, c.orientation_angle-c.pt2_normal_angle), chords, 0)
+        # pdb.set_trace()
         features = []
         for chord in chords:
-            l = chord.length
+            l = chord.length/mean_chord_len
             o = chord.orientation_angle
             n1 = chord.pt1_normal_angle
             n2 = chord.pt2_normal_angle
             # print n1-o
-            features.append([o])
-        # chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_ONE, self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO]))
-        chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_TWO]))
-        # strech chordiogram to one dimensional
-        # pdb.set_trace()
+            features.append([l, o, n1, n2])
+        #chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO]))
+        chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.LENGTH_BINS, self.ANGLE_BINS_ONE, self.ANGLE_BINS_THREE, self.ANGLE_BINS_THREE]))
 
         chordiogram_1d = np.reshape(chordiogram, (1, self.SAMPLE_SIZE))
         chordiogram_1d = chordiogram_1d/float(len(chords))
@@ -296,6 +317,7 @@ class ShapeDetector:
         NORMAL_FACTOR = 0.1
         p1 = chord.pt1[0]
         p2 = chord.pt2[0]
+        mid = chord.mid[0]
 
         p1_normal = chord.pt1_normal * 10
         p2_normal = chord.pt2_normal * 10
@@ -315,8 +337,11 @@ class ShapeDetector:
         fontScale = 0.3
         txt1 = "%.2f" % (chord.pt1_normal_angle/math.pi*180)
         txt2 = "%.2f" % (chord.pt2_normal_angle/math.pi*180)
-        cv2.putText(img, txt1, tuple(p1+[3,3]), fontFace, fontScale,self.RED, 1, 8)
-        cv2.putText(img, txt2, tuple(p2+[3,3]), fontFace, fontScale,self.RED, 1, 8)
+        cv2.putText(img, txt1, tuple(p1+[4,4]), fontFace, fontScale,self.GREEN, 1, 8)
+        cv2.putText(img, txt2, tuple(p2+[4,4]), fontFace, fontScale,self.YELLOW, 1, 8)
+
+        txt3 = "%.2f" % (chord.orientation_angle/math.pi*180)
+        cv2.putText(img, txt3, tuple(mid), fontFace, fontScale,self.RED, 1, 8)
 
     def get_contour_centroid(self, cnt):
         # compute the centroid of the contour to help compute chord normals and orientation
@@ -459,17 +484,25 @@ def dotproduct(v1, v2):
 def length(v):
   return math.sqrt(dotproduct(v, v))
 
-def angle(v1, v2):
+def angle_old(v1, v2):
     cosine = dotproduct(v1, v2) / (length(v1) * length(v2)+0.0001)
     # print math.acos(cosine)/math.pi*180
     return math.acos(cosine)
+
+def angle(v1, v2):
+    x1, y1 = v1
+    x2, y2 = v2
+    angle = math.atan2(y2, x2) - math.atan2(y1, x1)
+    if angle < 0:
+        return angle + 2*math.pi
+    else:
+        return angle
 
 def withinDistance(p1, p2, distance):
     return p1 >= p2 and p1-p2 <= distance
 
 sd = ShapeDetector()
-sd.get_training_data2()
-#sd.get_training_data_from_img('train/0.jpg')
+sd.get_training_data2('train/')
 
-# svm = sd.train_classifier()
-# sd.test_classifier('test/3.jpg', svm)
+svm = sd.train_classifier()
+sd.test_classifier('test/7.jpg', svm)
