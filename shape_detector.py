@@ -108,21 +108,6 @@ class ShapeDetector:
                                     # are within 10px then remove the innner conotur
     CHORD_LEN_THRESHOLD = 30
 
-    # def get_training_data(self, dir):
-    #     for root, subdirs, files in os.walk(dir):
-    #         for file in files:
-    #             if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
-    #                 path_to_img = os.path.join(root,file)
-    #                 self.get_training_data_from_img(path_to_img)
-
-    # get shapes from image and store shape
-    # information (chordiogram) in a file for training classifier
-    # def get_training_data_from_img(self, path_to_img):
-    #     img = cv2.imread(path_to_img)
-    #     color, bw = self.preprocess_image(img)
-    #     self.get_training_samples(color, bw)
-
-
     def get_training_data2(self, dir):
         for i in range(1,self.NUM_CLASS):
             dir_name = dir+str(i)+'/'
@@ -235,9 +220,11 @@ class ShapeDetector:
             previous_gradient = None
             diffs = []
             mask = np.zeros(bw_img.shape,np.uint8)
+            corners = []
             for i,pt in enumerate(cnt):
                 prev = cnt[(i-1)%len(cnt)]     # use neighbor points to compute gradient
                 nxt = cnt[(i+1)%len(cnt)]
+
                 gradient = self.get_gradient_angle(prev, nxt)
 
                 if not previous_gradient:
@@ -245,11 +232,10 @@ class ShapeDetector:
                 else:
                     # compute gradient angle difference
                     diff = math.fabs(previous_gradient-gradient)
-                    # if diff is close to 360 degree, set it to zero
-                    if diff > 320/180*math.pi:
-                        diff = 0
+                    # if diff is greater than 320 degree, the gradient change is too big, set it to zero
+                    diff = 0 if diff > 300.0/180.0*math.pi else diff
+
                     c = diff*255
-                    # print previous_gradient, gradient
                     diffs.append(diff)
                     cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
                     previous_gradient = gradient
@@ -258,14 +244,14 @@ class ShapeDetector:
             # find the maximums
             for j, diff in enumerate(diffs):
                 is_max = True
-                for n in range(-2,3):
+                for n in range(-3,4): # find the max in [j-2, j+2] neighborhood
                     if n == 0: continue
                     is_max = is_max and diff >= diffs[(j+n)%len(diffs)]
                 if is_max:
                     #print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
                     # compute the gradient diffs of the max points again and find the inflection point
                     mmax.append(j)
-                    cv2.circle(mask, tuple(cnt[j][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
+                    cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
             self.show_image_in_window('m', mask)
 
             # compute the gradient between the max
@@ -276,14 +262,17 @@ class ShapeDetector:
                 next_max = cnt[next_max_index]
                 current = cnt[max_index]
 
-                # pdb.set_trace()
-
                 d = math.fabs(self.get_gradient_angle(prev_max, current) - self.get_gradient_angle(current, next_max))
+                d = 0 if d > 300.0/180.0*math.pi else d
+
                 if d > 0.25*math.pi:
+                    corners.append(d)
                     txt = "%.2f" % (d/math.pi*180)
                     cv2.circle(color_img, tuple(current[0]),3, self.RED, thickness=2, lineType=8, shift=0)
                     cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-            #print count
+
+        #infer shape from corners
+
         self.show_image_in_window('c', color_img)
 
 
@@ -293,7 +282,6 @@ class ShapeDetector:
 
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         contours = self.filter_contours(contours)
-        print len(contours)
 
         for h, cnt in enumerate(contours):
             # centroid = self.get_contour_centroid(cnt)
@@ -302,71 +290,17 @@ class ShapeDetector:
             #     if i%1000 == 0:
             #         self.draw_chords(color_img, c, centroid)
             # self.show_image_in_window('c', color_img)
-            previous_gradient = None
-            diffs = []
-            mask = np.zeros(bw_img.shape,np.uint8)
-            count = 0
-            for i,pt in enumerate(cnt):
-                prev= cnt[(i-1)%len(cnt)]     #if first or last pair,
-                nxt= cnt[(i+1)%len(cnt)]       #wrap around contour to find two nearest points
-                gradient = self.get_gradient_angle(prev, nxt)
-                #if i %500 == 0:
-                #    cv2.line(color_img, tuple(prev[0][0]), tuple(nxt[0][0]), self.RED)
+            features = self.get_feature_helper(cnt)
+            samples = np.append(samples, features, 0)
 
-                if not previous_gradient:
-                    previous_gradient = gradient
-                else:
-                    # compute gradient angle diff
-                    diff = previous_gradient-gradient
-                    if math.fabs(diff-2*math.pi) < 0.2:
-                        diff = 0
-                    c = diff*255
-                    #print previous_gradient, gradient
-                    diffs.append(diff)
-                    cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
-                    previous_gradient = gradient
+        responses = [img_class]*len(samples)
+        responses = np.array(responses,np.float32)
+        responses = responses.reshape((responses.size,1))
 
-            mmax = []
-            # find the maximums
-            for j, diff in enumerate(diffs):
-                is_max = True
-                for n in range(-2,3):
-                    if n == 0: continue
-                    is_max = is_max and diff >= diffs[(j+n)%len(diffs)]
-                if is_max:
-                    #print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
-                    # compute the gradient diffs of the max points again and find the inflection point
-                    mmax.append(j)
-                    cv2.circle(mask, tuple(cnt[j][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
-            # compute the gradient between the max
-            for i, max_index in enumerate(mmax):
-                prev_max_index = mmax[(i-1)%len(mmax)]
-                next_max_index = mmax[(i+1)%len(mmax)]
-                prev_max = cnt[prev_max_index]
-                next_max = cnt[next_max_index]
-                current = cnt[max_index]
+        np.savetxt('TrainingResponses/tmp_samples.data',samples)
+        np.savetxt('TrainingResponses/tmp_responses.data',responses)
+        self.append_result_to_file()
 
-                # pdb.set_trace()
-
-                d = math.fabs(self.get_gradient_angle(prev_max, current) - self.get_gradient_angle(current, next_max))
-                if d > 0.25*math.pi:
-                    txt = "%.2f" % (d/math.pi*180)
-                    cv2.circle(color_img, tuple(current[0]),3, self.RED, thickness=2, lineType=8, shift=0)
-                    cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-
-            #print count
-            self.show_image_in_window('c', color_img  )
-
-        #     features = self.get_feature_helper(cnt)
-        #     samples = np.append(samples, features, 0)
-        #
-        # responses = [img_class]*len(samples)
-        # responses = np.array(responses,np.float32)
-        # responses = responses.reshape((responses.size,1))
-        #
-        # np.savetxt('TrainingResponses/tmp_samples.data',samples)
-        # np.savetxt('TrainingResponses/tmp_responses.data',responses)
-        # self.append_result_to_file()
     def get_gradient_angle(self, prev, nxt):
         tangent = nxt - prev
         dx,dy = tangent[0]
