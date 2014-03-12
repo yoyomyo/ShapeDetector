@@ -3,6 +3,9 @@ import os,sys,math,pdb
 import numpy as np
 import cv2
 from itertools import combinations
+import svgwrite
+from svgwrite import px
+
 
 class Chord:
 
@@ -102,32 +105,27 @@ class ShapeDetector:
     #LENGTH_BINS = [math.log(x) for x in [1., 6.28, 39.44, 247.67, 1555.38]]
     LENGTH_BINS = [math.pow(10, x) for x in [-2, -1, 0, 1, 2]]
 
-    NUM_CLASS = 2
+    NUM_CLASS = 3
 
     NESTED_CONTOUR_DISTANCE = 10    #if a two contours are nested and their boundaries
                                     # are within 10px then remove the innner conotur
-    CHORD_LEN_THRESHOLD = 30
+    PT_DISTANCE_THRESHOLD = 15
 
-    def get_training_data2(self, dir):
-        for i in range(1,self.NUM_CLASS):
-            dir_name = dir+str(i)+'/'
-            # print dir_name
-            for root, subdirs, files in os.walk(dir_name):
-                for file in files:
-                    if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
-                        path_to_img = os.path.join(root,file)
-                        img_class = i
-                        # print path_to_img, img_class
-                        # pdb.set_trace()
-                        self.get_training_data_from_img2(path_to_img, img_class)
+    def get_data(self, dir):
+        for root, subdirs, files in os.walk(dir):
+            for file in files:
+                if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
+                    path_to_img = os.path.join(root,file)
+                    # print path_to_img, img_class
+                    # pdb.set_trace()
+                    self.get_shapes_from_img(path_to_img)
 
     # get shape features from img, put them into ,
     # and store relevant shape into
-    def get_training_data_from_img2(self, path_to_img, img_class):
+    def get_shapes_from_img(self, path_to_img):
         img = cv2.imread(path_to_img)
         color, bw_img = self.preprocess_image(img)
-        #self.get_features(color, bw_img, img_class)
-        self.get_key_points(color, bw_img)
+        self.get_shapes(color, bw_img)
 
     def preprocess_image(self, img):
         w,h,c = img.shape
@@ -212,68 +210,111 @@ class ShapeDetector:
         np.savetxt('TrainingResponses/tmp_responses.data',responses)
 
 
-    def  get_key_points(self, color_img, bw_img):
+    def  get_shapes(self, color_img, bw_img):
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         contours = self.filter_contours(contours)
 
         for h, cnt in enumerate(contours):
-            previous_gradient = None
-            diffs = []
-            mask = np.zeros(bw_img.shape,np.uint8)
-            corners = []
-            for i,pt in enumerate(cnt):
-                prev = cnt[(i-1)%len(cnt)]     # use neighbor points to compute gradient
-                nxt = cnt[(i+1)%len(cnt)]
+            points = self.get_key_points(cnt)
+            shape = self.infer_shape_from_key_points(points, cnt)           # shape: 0 <-> circle, 1 <-> ellipse, 2 <-> rectangle, 3 <-> triangle
 
-                gradient = self.get_gradient_angle(prev, nxt)
+        #         txt = "%.2f" % (d/math.pi*180)
+            for pt in points:
+                cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
+        #         cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
+            self.show_image_in_window('c', color_img)
 
-                if not previous_gradient:
-                    previous_gradient = gradient
-                else:
-                    # compute gradient angle difference
-                    diff = math.fabs(previous_gradient-gradient)
-                    # if diff is greater than 320 degree, the gradient change is too big, set it to zero
-                    diff = 0 if diff > 300.0/180.0*math.pi else diff
-
-                    c = diff*255
-                    diffs.append(diff)
-                    cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
-                    previous_gradient = gradient
-
-            mmax = []
-            # find the maximums
-            for j, diff in enumerate(diffs):
-                is_max = True
-                for n in range(-3,4): # find the max in [j-2, j+2] neighborhood
-                    if n == 0: continue
-                    is_max = is_max and diff >= diffs[(j+n)%len(diffs)]
-                if is_max:
-                    #print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
-                    # compute the gradient diffs of the max points again and find the inflection point
-                    mmax.append(j)
-                    cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
-            self.show_image_in_window('m', mask)
-
-            # compute the gradient between the max
-            for i, max_index in enumerate(mmax):
-                prev_max_index = mmax[(i-1)%len(mmax)]
-                next_max_index = mmax[(i+1)%len(mmax)]
-                prev_max = cnt[prev_max_index]
-                next_max = cnt[next_max_index]
-                current = cnt[max_index]
-
-                d = math.fabs(self.get_gradient_angle(prev_max, current) - self.get_gradient_angle(current, next_max))
-                d = 0 if d > 300.0/180.0*math.pi else d
-
-                if d > 0.25*math.pi:
-                    corners.append(d)
-                    txt = "%.2f" % (d/math.pi*180)
-                    cv2.circle(color_img, tuple(current[0]),3, self.RED, thickness=2, lineType=8, shift=0)
-                    cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-
-        #infer shape from corners
-
+            if shape == 0:
+                (x,y),radius = cv2.minEnclosingCircle(cnt)
+                center = (int(x),int(y))
+                radius = int(radius)
+                cv2.circle(color_img,center,radius,self.RED,2)
+            elif shape == 1:
+                ellipse = cv2.fitEllipse(cnt)
+                cv2.ellipse(color_img,ellipse,self.GREEN,2)
+            elif shape == 2:
+                # x,y,w,h = cv2.boundingRect(cnt)
+                # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
+                rect = cv2.minAreaRect(cnt)
+                box = cv2.cv.BoxPoints(rect)
+                box = np.int0(box)
+                cv2.drawContours(color_img,[box],0,self.YELLOW,2)
+            elif shape == 3:
+                print points
+                cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
+                cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
+                cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
+            # convert shape parameter to svg on image
         self.show_image_in_window('c', color_img)
+
+    def get_key_points(self, cnt):
+        previous_gradient = None
+        diffs = []
+        # mask = np.zeros(bw_img.shape,np.uint8)
+        key_points = []
+        for i,pt in enumerate(cnt):
+            prev = cnt[(i-1)%len(cnt)]     # use neighbor points to compute gradient
+            nxt = cnt[(i+1)%len(cnt)]
+
+            gradient = self.get_gradient_angle(prev, nxt)
+
+            if not previous_gradient:
+                previous_gradient = gradient
+            else:
+                # compute gradient angle difference
+                diff = math.fabs(previous_gradient-gradient)
+                # if diff is greater than 320 degree, the gradient change is too big, set it to zero
+                diff = 0 if diff > 300.0/180.0*math.pi else diff
+
+                c = diff*255
+                diffs.append(diff)
+                # cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
+                previous_gradient = gradient
+
+        mmax = []
+        # find the maximums
+        for j, diff in enumerate(diffs):
+            is_max = True
+            for n in range(-3,4): # find the max in [j-2, j+2] neighborhood
+                if n == 0: continue
+                is_max = is_max and diff >= diffs[(j+n)%len(diffs)]
+            if is_max:
+                #print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
+                # compute the gradient diffs of the max points again and find the inflection point
+                mmax.append(j)
+                # cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
+        # self.show_image_in_window('m', mask)
+
+        # compute the gradient between the max
+        for i, max_index in enumerate(mmax):
+            prev_max_index = mmax[(i-1)%len(mmax)]
+            next_max_index = mmax[(i+1)%len(mmax)]
+            prev_max = cnt[prev_max_index]
+            next_max = cnt[next_max_index]
+            current = cnt[max_index]
+
+            d = math.fabs(self.get_gradient_angle(prev_max, current) - self.get_gradient_angle(current, next_max))
+            d = 0 if d > 300.0/180.0*math.pi else d
+
+            if d > 0.25*math.pi:
+                if any(dist(pt,current)<self.PT_DISTANCE_THRESHOLD for pt in key_points):
+                    pass
+                else:
+                    key_points.append(current)
+
+        return key_points
+
+    def infer_shape_from_key_points(self, key_points, cnt):
+        x,y,w,h = cv2.boundingRect(cnt)
+        if len(key_points) < 3:
+            if abs((w+0.0)/(h+0.0)-1) < 0.3:
+                return 0 #or 1
+            else:
+                return 1
+        elif len(key_points) == 3:
+            return 3
+        elif len(key_points) > 3:
+            return 2
 
 
     # parameter used in this function:
@@ -529,6 +570,25 @@ class ShapeDetector:
 
     def mark_shape(self, img, x,y,w,h,color):
         cv2.rectangle(img,(x,y),(x+w,y+h),color,1)
+
+    def get_extent(self, cnt):
+        area = cv2.contourArea(cnt)
+        x,y,w,h = cv2.boundingRect(cnt)
+        rect_area = w*h
+        extent = float(area)/rect_area
+        return extent
+
+    def generate_svg(self, shapes, filename):
+        height, width = shapes.pop(0)
+
+        dwg = svgwrite.Drawing(filename, size = ((width+6)*px, (height+6)*px))
+        dwg.add(dwg.rect(insert=(3*px, 3*px), size=(width*px, height*px), fill='white', stroke='black', stroke_width=3))
+        for x,y,w,h in shapes:
+            rect = dwg.add(dwg.rect(insert=(x*px, y*px), size=(w*px, h*px)))
+            rect.fill('white',opacity=0.5).stroke('black', width=3)
+        dwg.save()
+
+
 # global helper functions
 def midpoint(p1, p2):
     return (p1+p2)/2
@@ -581,7 +641,7 @@ def withinDistance(p1, p2, distance):
     return p1 >= p2 and p1-p2 <= distance
 
 sd = ShapeDetector()
-sd.get_training_data2('train/')
+sd.get_data('test')
 
 # svm = sd.train_classifier()
 # sd.test_classifier('test/2.jpg', svm)
