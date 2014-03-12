@@ -2,92 +2,15 @@ __author__ = 'yoyomyo'
 import os,sys,math,pdb
 import numpy as np
 import cv2
-from itertools import combinations
 import svgwrite
 from svgwrite import px
 
-
-class Chord:
-
-    def __init__(self, pt1, pt2, pt1_prev, pt1_next, pt2_prev, pt2_next, cnt_centroid):
-        # chord is a vector from pt1 to pt2
-        self.chord = (pt2-pt1)[0]
-        self.mid = (pt1+pt2)/2
-        self.pt1 = pt1
-        self.pt2 = pt2
-        self.length = dist(pt1, pt2)
-        self.center = cnt_centroid
-        self.pt1_normal = self.get_normal(pt1, pt1_prev, pt1_next)
-        self.pt2_normal = self.get_normal(pt2, pt2_prev, pt2_next)
-        self.pt1_normal_angle = self.get_normal_angle(1)
-        self.pt2_normal_angle = self.get_normal_angle(2)
-        self.orientation_angle = self.get_orientation()
-
-    # def __init__(self, pt1, pt2, pt1_normal, pt2_normal):
-    #     self.chord = (pt2-pt1)[0]
-    #     self.mid = (pt1+pt2)/2
-    #     self.pt1 = pt1
-    #     self.pt2 = pt2
-    #     self.length = dist(pt1, pt2)
-    #     self.pt1_normal_angle = pt1_normal
-    #     self.pt2_normal_angle = pt2_normal
-    #     self.orientation_angle = self.get_orientation()
-
-    # make sure that normal is pointing towards the inner contour
-    def get_normal_angle(self, pt):
-        mid_center = (self.center - self.mid)[0]
-        if pt == 1:
-            sign = dotproduct(self.pt1_normal, mid_center)
-            a = angle(self.chord,self.pt1_normal)
-        elif pt == 2:
-            sign = dotproduct(self.pt2_normal, mid_center)
-            a = angle(self.chord,self.pt2_normal)
-        return a
-
-    def get_normal(self, pt, prev, next):
-        center = self.center
-        dx,dy = (next-prev)[0]
-        pt_center = (center - pt)[0]
-        n1 = np.array([-dy, dx])
-        n2 = np.array([dy, -dx])
-        dp = dotproduct(pt_center, n1)
-        if dp > 0:
-            return normalize(n1)
-        else:
-            return normalize(n2)
-
-    # orientation is between 0 and pi
-    def get_orientation(self):
-        dx,dy = self.chord
-        a1 = math.atan2(dy,dx)
-        a2 = math.atan2(-dy,-dx)
-        if a1 < 0:
-            return a2
-        else:
-            return a1
-
-    # def get_orientation(self):
-    #     cnt_centroid = self.center
-    #     x, y = self.chord
-    #     normal1 = (-y,x)
-    #     normal2 = (y,-x)
-    #     mid_center = (cnt_centroid - self.mid)[0]
-    #     #return math.atan2(x, y)
-    #     # dot product
-    #     dp1 = dotproduct(mid_center, normal1)
-    #     if dp1 > 0:
-    #         return angle(normal1, mid_center)
-    #     else:
-    #         return angle(normal2, mid_center)
-
 class ShapeDetector:
 
-    SAMPLE_SIZE = 4*8*8*8
+    CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
 
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
-
     MORPH_DIM = (3,3)
-
     CONTOUR_THRESHOLD = 50          # if a contour does not contain more than 50 pixels,
                                     # then we are not interested in the contour
     RED = (0,0,255)
@@ -95,21 +18,13 @@ class ShapeDetector:
     BLUE = (255,0,0)
     YELLOW = (0,255,255)
 
-    EPS = 0.0001                    # used to prevent the zero case when computing log
-
-    # used to build chordiogram
-    #ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,0.5,0.0625)] + [math.pi*0.5]
-    ANGLE_BINS_TWO = [x*math.pi for x in np.arange(-1,1,0.25)] + [math.pi]
-    ANGLE_BINS_ONE = [x*math.pi for x in np.arange(0,1,0.125)] + [math.pi]
-
-    #LENGTH_BINS = [math.log(x) for x in [1., 6.28, 39.44, 247.67, 1555.38]]
-    LENGTH_BINS = [math.pow(10, x) for x in [-2, -1, 0, 1, 2]]
+    EPS = 0.0001                    # used to prevent the division by zero or taking lo
 
     NUM_CLASS = 3
 
     NESTED_CONTOUR_DISTANCE = 10    #if a two contours are nested and their boundaries
                                     # are within 10px then remove the innner conotur
-    PT_DISTANCE_THRESHOLD = 15
+    PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should depend on how big the contour is
 
     def get_data(self, dir):
         for root, subdirs, files in os.walk(dir):
@@ -148,104 +63,56 @@ class ShapeDetector:
         #self.show_image_in_window('preprocess', img3)
         return img,img3
 
-    def train_classifier(self):
-        samples = np.loadtxt('TrainingResponses/generalsamples.data',np.float32)
-        responses = np.loadtxt('TrainingResponses/generalresponses.data',np.float32)
-        responses = responses.reshape((responses.size,1))
-        model = cv2.SVM()
-        model.train(samples,responses)
-        return model
-
-    def show_image_in_window(self, win_name, img):
-        cv2.imshow(win_name,img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-
-    # parameter used in this function:
-    def get_training_samples(self,color_img, bw_img):
-        samples =  np.empty((0,self.SAMPLE_SIZE))
-        responses = []
-        keys = [48,49,50] # key responses are 0=circle, 1=rectangle, 2=triangle
-
-        contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-        contours = self.filter_contours(contours)
-
-        for cnt in contours:
-            print len(cnt)
-            x,y,w,h = cv2.boundingRect(cnt)
-            cv2.rectangle(color_img,(x,y),(x+w,y+h),self.RED,2)
-
-            # centroid = self.get_contour_centroid(cnt)
-            chords = self.get_chords(cnt)
-            chord_entries = [chord.orientation_angle for chord in chords]
-            # for chord in chords:
-            #     chord_entry = [math.log(chord.length+0.001),
-            #                    chord.orientation_angle,
-            #                    chord.pt1_normal_angle,
-            #                    chord.pt2_normal_angle]
-            #     #0print chord_entry
-            #     chord_entries.append(chord_entry)
-            # chordiogram = np.histogramdd(np.array(chord_entries), bins = np.array([self.LENGTH_BINS, self.ANGLE_BINS, self.ANGLE_BINS, self.ANGLE_BINS]))
-
-            chordiogram = np.histogram(chord_entries, bins = self.ANGLE_BINS)
-
-            # strech chordiogram to one dimensional
-            chordiogram_1d = np.reshape(chordiogram[0], (1, self.SAMPLE_SIZE))
-            chordiogram_1d = chordiogram_1d/float(len(chords))
-            #pdb.set_trace()
-            cv2.imshow('norm',color_img)
-            key = cv2.waitKey(0)
-            if key == 27:
-                sys.exit()
-            elif key in keys:
-                responses.append(int(chr(key)))
-                samples = np.append(samples, chordiogram_1d, 0)
-            cv2.destroyAllWindows()
-
-        responses = np.array(responses,np.float32)
-        responses = responses.reshape((responses.size,1))
-        print responses
-
-        np.savetxt('TrainingResponses/tmp_samples.data',samples)
-        np.savetxt('TrainingResponses/tmp_responses.data',responses)
-
-
     def  get_shapes(self, color_img, bw_img):
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         contours = self.filter_contours(contours)
-
+        shapes = [] # a shape is a dictionary containing necessary information to draw the shape in SVG
         for h, cnt in enumerate(contours):
             points = self.get_key_points(cnt)
-            shape = self.infer_shape_from_key_points(points, cnt)           # shape: 0 <-> circle, 1 <-> ellipse, 2 <-> rectangle, 3 <-> triangle
+            shape = self.infer_shape_from_key_points(points, cnt)
 
-        #         txt = "%.2f" % (d/math.pi*180)
-            for pt in points:
-                cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
-        #         cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-            self.show_image_in_window('c', color_img)
 
-            if shape == 0:
+            # for pt in points:
+            #     cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
+            #     #txt = "%.2f" % (d/math.pi*180)
+            #     #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
+            # self.show_image_in_window('c', color_img)
+
+            if shape == self.CIRCLE:
                 (x,y),radius = cv2.minEnclosingCircle(cnt)
                 center = (int(x),int(y))
                 radius = int(radius)
                 cv2.circle(color_img,center,radius,self.RED,2)
-            elif shape == 1:
+                shapes.append({
+                    shape:self.CIRCLE,
+                    center:(int(x),int(y)),
+                    radius:int(radius)
+                })
+            elif shape == self.ELLIPSE:
                 ellipse = cv2.fitEllipse(cnt)
+                pdb.set_trace()
                 cv2.ellipse(color_img,ellipse,self.GREEN,2)
-            elif shape == 2:
+            elif shape == self.RECT:
                 # x,y,w,h = cv2.boundingRect(cnt)
                 # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
                 rect = cv2.minAreaRect(cnt)
                 box = cv2.cv.BoxPoints(rect)
                 box = np.int0(box)
+                pdb.set_trace()
                 cv2.drawContours(color_img,[box],0,self.YELLOW,2)
-            elif shape == 3:
-                print points
+
+            elif shape == self.TRIANGLE:
                 cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
                 cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
                 cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
-            # convert shape parameter to svg on image
+                shapes.append({
+                    shape:self.TRIANGLE,
+                    points:[pt[0] for pt in points]
+                })
+
+        # convert shape parameter to svg on image
         self.show_image_in_window('c', color_img)
+
 
     def get_key_points(self, cnt):
         previous_gradient = None
@@ -308,39 +175,14 @@ class ShapeDetector:
         x,y,w,h = cv2.boundingRect(cnt)
         if len(key_points) < 3:
             if abs((w+0.0)/(h+0.0)-1) < 0.3:
-                return 0 #or 1
+                return self.CIRCLE
             else:
-                return 1
+                return self.ELLIPSE
         elif len(key_points) == 3:
-            return 3
+            return self.TRIANGLE
         elif len(key_points) > 3:
-            return 2
+            return self.RECT
 
-
-    # parameter used in this function:
-    def  get_features(self, color_img, bw_img, img_class):
-        samples = np.empty((0,self.SAMPLE_SIZE))
-
-        contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-        contours = self.filter_contours(contours)
-
-        for h, cnt in enumerate(contours):
-            # centroid = self.get_contour_centroid(cnt)
-            # chords = self.get_chords(cnt)
-            # for i, c in enumerate(chords):
-            #     if i%1000 == 0:
-            #         self.draw_chords(color_img, c, centroid)
-            # self.show_image_in_window('c', color_img)
-            features = self.get_feature_helper(cnt)
-            samples = np.append(samples, features, 0)
-
-        responses = [img_class]*len(samples)
-        responses = np.array(responses,np.float32)
-        responses = responses.reshape((responses.size,1))
-
-        np.savetxt('TrainingResponses/tmp_samples.data',samples)
-        np.savetxt('TrainingResponses/tmp_responses.data',responses)
-        self.append_result_to_file()
 
     def get_gradient_angle(self, prev, nxt):
         tangent = nxt - prev
@@ -350,104 +192,6 @@ class ShapeDetector:
             return a1 + 2*math.pi
         else:
             return a1
-
-    def get_feature_helper(self, cnt):
-        chords = self.get_chords(cnt)
-        mean_chord_len = reduce(lambda a, c: c.length + a, chords, 0)/len(chords)
-        # min_o= reduce(lambda a,c: min(a, c.orientation_angle), chords, 2*math.pi)
-        # max_o = reduce(lambda a,c: max(a, c.orientation_angle), chords, 0)
-        # min_angle = reduce(lambda a,c: min(a, c.orientation_angle-c.pt1_normal_angle, c.orientation_angle-c.pt2_normal_angle), chords, 2*math.pi)
-        # max_angle = reduce(lambda a,c: max(a, c.orientation_angle-c.pt1_normal_angle, c.orientation_angle-c.pt2_normal_angle), chords, 0)
-        # pdb.set_trace()
-        features = []
-        for chord in chords:
-            l = chord.length/mean_chord_len
-            o = chord.orientation_angle
-            n1 = chord.pt1_normal_angle
-            n2 = chord.pt2_normal_angle
-            # print n1-o
-            features.append([l, o, n1, n2])
-        #chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO, self.ANGLE_BINS_TWO]))
-        chordiogram, edges = np.histogramdd(np.array(features),  bins = np.array([self.LENGTH_BINS, self.ANGLE_BINS_ONE, self.ANGLE_BINS_ONE, self.ANGLE_BINS_ONE]))
-
-        chordiogram_1d = np.reshape(chordiogram, (1, self.SAMPLE_SIZE))
-        chordiogram_1d = chordiogram_1d/float(len(chords))
-        return chordiogram_1d
-
-    # maybe use a better method
-    def append_result_to_file(self):
-        with open("TrainingResponses/generalresponses.data", "a") as f1:
-            with open("TrainingResponses/tmp_responses.data", "r") as f2:
-                f1.write(f2.read())
-
-        with open("TrainingResponses/generalsamples.data", "a") as f3:
-            with open("TrainingResponses/tmp_samples.data", "r") as f4:
-                f3.write(f4.read())
-
-    # given a contour
-    # return a list of chords
-    # each chord has pt1, pt2, normal at pt1, normal at pt2, length, chords orientation
-    # given a contour
-    # return a list of chords
-    # each chord has pt1, pt2, normal at pt1, normal at pt2, length, chords orientation
-    def get_chords(self, contour):
-
-        num_points = len(contour)
-        pairs = combinations(range(num_points), 2)
-        centroid = self.get_contour_centroid(contour)
-        chords = []
-        for x,y in pairs:
-            chord = Chord(pt1=contour[x],
-                          pt2=contour[y],
-                          pt1_prev= contour[(x-1)%num_points],    # if first or last pair,
-                          pt1_next= contour[(x+1)%num_points],    # wrap around contour to find two nearest points
-                          pt2_prev= contour[(y-1)%num_points],    # else shift the contour by 1
-                          pt2_next= contour[(y+1)%num_points],    # to the left and 1 to the right
-                          cnt_centroid = centroid)
-            if chord.length > self.CHORD_LEN_THRESHOLD:
-                chords.append(chord)
-        return chords
-
-    def compute_pt_normal(self, pt, neighbor1, neighbor2):
-        tangent_x,tangent_y = (neighbor2 - neighbor1)[0]
-        normal_x = math.fabs(tangent_y)
-        normal_y = math.fabs(tangent_x)
-        a = math.atan2(normal_y, normal_x)
-        if a < 0:
-            return a+2*math.pi
-        else:
-            return a
-
-    def draw_chords(self, img, chord, cnt_centroid):
-        NORMAL_FACTOR = 0.1
-        p1 = chord.pt1[0]
-        p2 = chord.pt2[0]
-        mid = chord.mid[0]
-
-        p1_normal = chord.pt1_normal * 10
-        p2_normal = chord.pt2_normal * 10
-
-        cv2.circle(img, tuple(cnt_centroid), 1, self.RED)
-        # p1_normal = np.rint(chord.pt1_normal_angle)
-        # p2_normal = np.rint(chord.pt2_normal_angle/math.p)
-        # orientation = np.rint(chord.orientation*NORMAL_FACTOR, cnt_centroid)
-
-        # test if the values are correct
-        draw_line(img, p1, p1_normal.astype(int),self.RED)
-        draw_line(img, p2, p2_normal.astype(int),self.GREEN)
-        cv2.line(img, tuple(p1), tuple(p2), self.BLUE)
-
-        # draw_line(img, mid, orientation.astype(int), self.YELLOW)
-
-        fontFace = cv2.FONT_HERSHEY_SCRIPT_SIMPLEX
-        fontScale = 0.3
-        txt1 = "%.2f" % (chord.pt1_normal_angle/math.pi*180)
-        txt2 = "%.2f" % (chord.pt2_normal_angle/math.pi*180)
-        cv2.putText(img, txt1, tuple(p1+[4,4]), fontFace, fontScale,self.GREEN, 1, 8)
-        cv2.putText(img, txt2, tuple(p2+[4,4]), fontFace, fontScale,self.YELLOW, 1, 8)
-
-        txt3 = "%.2f" % (chord.orientation_angle/math.pi*180)
-        cv2.putText(img, txt3, tuple(mid), fontFace, fontScale,self.RED, 1, 8)
 
     def get_contour_centroid(self, cnt):
         # compute the centroid of the contour to help compute chord normals and orientation
@@ -578,6 +322,13 @@ class ShapeDetector:
         extent = float(area)/rect_area
         return extent
 
+    def show_image_in_window(self, win_name, img):
+        cv2.imshow(win_name,img)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
+
+    # given a list of shapes, draw the shape in svg
+    # and save the svg to a file in the end
     def generate_svg(self, shapes, filename):
         height, width = shapes.pop(0)
 
