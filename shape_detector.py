@@ -2,8 +2,7 @@ __author__ = 'yoyomyo'
 import os,sys,math,pdb
 import numpy as np
 import cv2
-import svgwrite
-from svgwrite import px
+from svg_generator import *
 
 class ShapeDetector:
 
@@ -26,6 +25,8 @@ class ShapeDetector:
                                     # are within 10px then remove the innner conotur
     PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should depend on how big the contour is
 
+    ALIGNMENT_DRIFT_THRESHOLD = 5
+
     def get_data(self, dir):
         for root, subdirs, files in os.walk(dir):
             for file in files:
@@ -35,12 +36,16 @@ class ShapeDetector:
                     # pdb.set_trace()
                     self.get_shapes_from_img(path_to_img)
 
+
     # get shape features from img, put them into ,
     # and store relevant shape into
     def get_shapes_from_img(self, path_to_img):
         img = cv2.imread(path_to_img)
         color, bw_img = self.preprocess_image(img)
-        self.get_shapes(color, bw_img)
+        shapes = self.get_shapes(color, bw_img)
+        h,w= bw_img.shape
+
+        self.generate_svg(shapes, 'test.svg', w, h)
 
     def preprocess_image(self, img):
         w,h,c = img.shape
@@ -63,7 +68,7 @@ class ShapeDetector:
         #self.show_image_in_window('preprocess', img3)
         return img,img3
 
-    def  get_shapes(self, color_img, bw_img):
+    def get_shapes(self, color_img, bw_img):
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         contours = self.filter_contours(contours)
         shapes = [] # a shape is a dictionary containing necessary information to draw the shape in SVG
@@ -84,34 +89,46 @@ class ShapeDetector:
                 radius = int(radius)
                 cv2.circle(color_img,center,radius,self.RED,2)
                 shapes.append({
-                    shape:self.CIRCLE,
-                    center:(int(x),int(y)),
-                    radius:int(radius)
+                    'shape':self.CIRCLE,
+                    'center':(int(x),int(y)),
+                    'radius':int(radius)
                 })
             elif shape == self.ELLIPSE:
                 ellipse = cv2.fitEllipse(cnt)
-                pdb.set_trace()
                 cv2.ellipse(color_img,ellipse,self.GREEN,2)
+                shapes.append({
+                    'shape':self.ELLIPSE,
+                    'ellipse': ellipse
+                })
+
             elif shape == self.RECT:
                 # x,y,w,h = cv2.boundingRect(cnt)
                 # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
                 rect = cv2.minAreaRect(cnt)
                 box = cv2.cv.BoxPoints(rect)
                 box = np.int0(box)
-                pdb.set_trace()
+                # pdb.set_trace()
+                shapes.append({
+                    'shape':self.RECT,
+                    'points':[tuple(pt) for pt in box]+[tuple(box[0])]
+                })
+                print [tuple(pt) for pt in box]+[tuple(box[0])]
                 cv2.drawContours(color_img,[box],0,self.YELLOW,2)
 
             elif shape == self.TRIANGLE:
+                # pdb.set_trace()
+                points = np.int0(points)
                 cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
                 cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
                 cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
                 shapes.append({
-                    shape:self.TRIANGLE,
-                    points:[pt[0] for pt in points]
+                    'shape':self.TRIANGLE,
+                    'points':[tuple(pt[0]) for pt in points] + [tuple(points[0][0])]
                 })
 
         # convert shape parameter to svg on image
         self.show_image_in_window('c', color_img)
+        return shapes
 
 
     def get_key_points(self, cnt):
@@ -146,7 +163,7 @@ class ShapeDetector:
                 if n == 0: continue
                 is_max = is_max and diff >= diffs[(j+n)%len(diffs)]
             if is_max:
-                #print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
+                # print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
                 # compute the gradient diffs of the max points again and find the inflection point
                 mmax.append(j)
                 # cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
@@ -250,15 +267,15 @@ class ShapeDetector:
         xb1, yb1 = bottom1
         xb2, yb2 = bottom2
 
-        a = self.withinContourDistance(xl1, xl2)
-        b = self.withinContourDistance(xr2, xr1)
-        c = self.withinContourDistance(yt1, yt2)
-        d = self.withinContourDistance(yb2, yb1)
+        a = self.within_contour_distance(xl1, xl2)
+        b = self.within_contour_distance(xr2, xr1)
+        c = self.within_contour_distance(yt1, yt2)
+        d = self.within_contour_distance(yb2, yb1)
 
-        e = self.withinContourDistance(xl2, xl1)
-        f = self.withinContourDistance(xr1, xr2)
-        g = self.withinContourDistance(yt2, yt1)
-        h = self.withinContourDistance(yb1, yb2)
+        e = self.within_contour_distance(xl2, xl1)
+        f = self.within_contour_distance(xr1, xr2)
+        g = self.within_contour_distance(yt2, yt1)
+        h = self.within_contour_distance(yb1, yb2)
 
         if e and f and g and h:
             return 1
@@ -266,54 +283,17 @@ class ShapeDetector:
             return 2
         return 3
 
-    def withinContourDistance(self, p1, p2):
-        return withinDistance(p1,p2,self.NESTED_CONTOUR_DISTANCE)
+    def within_contour_distance(self, p1, p2):
+        return within_distance(p1,p2,self.NESTED_CONTOUR_DISTANCE)
 
-    # compute chordiogram for each contour, used in testing
-    def get_contour_info(self, cnt):
+    def is_horizontal_box(self, box):
+        br, bl, tl, tr = box
+        b_diff = abs(br[1]-bl[1])
+        r_diff = abs(br[0]-tr[0])
+        l_diff = abs(tl[0]-bl[0])
+        t_diff = abs(tl[1]-tr[1])
+        return all(x< 5 for x in [b_diff,r_diff,l_diff,t_diff])
 
-        # centroid = self.get_contour_centroid(cnt)
-        chords = self.get_chords(cnt)
-        chord_entries = [chord.orientation_angle for chord in chords]
-
-        # for chord in chords:
-        #     chord_entry = [math.log(max(chord.length, self.EPS)),
-        #                    chord.orientation_angle,
-        #                    chord.pt1_normal_angle,
-        #                    chord.pt2_normal_angle]
-        #     chord_entries.append(chord_entry)
-        # chordiogram = np.histogramdd(np.array(chord_entries), bins = np.array([self.LENGTH_BINS, self.ANGLE_BINS, self.ANGLE_BINS, self.ANGLE_BINS]))
-
-        chordiogram = np.histogram(chord_entries, bins = self.ANGLE_BINS)
-        # strech chordiogram to one dimensional
-        chordiogram_1d = np.reshape(chordiogram[0], (1, self.SAMPLE_SIZE))
-        chordiogram_1d = chordiogram_1d/float(len(chords))
-        return chordiogram_1d
-
-    # mark the shapes in img
-    def test_classifier(self, path_to_img, svm):
-        img = cv2.imread(path_to_img)
-        color, bw = self.preprocess_image(img)
-        contours, hierarchy = cv2.findContours(bw,cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
-        contours = self.filter_contours(contours)
-        for cnt in contours:
-            [x,y,w,h] = cv2.boundingRect(cnt)
-            chordiogram = self.get_feature_helper(cnt)
-            #print chordiogram
-            #pdb.set_trace()
-            chordiogram = np.array(chordiogram,np.float32)
-            shape_class = svm.predict(chordiogram)
-            print shape_class
-            options = {0 : self.RED,
-                1 : self.GREEN,
-                2 : self.BLUE
-            }
-            self.mark_shape(color, x,y,w,h,options[shape_class])
-
-        self.show_image_in_window('PREDICTION', color)
-
-    def mark_shape(self, img, x,y,w,h,color):
-        cv2.rectangle(img,(x,y),(x+w,y+h),color,1)
 
     def get_extent(self, cnt):
         area = cv2.contourArea(cnt)
@@ -329,15 +309,33 @@ class ShapeDetector:
 
     # given a list of shapes, draw the shape in svg
     # and save the svg to a file in the end
-    def generate_svg(self, shapes, filename):
-        height, width = shapes.pop(0)
+    def generate_svg(self, shapes, filename, width, height):
 
-        dwg = svgwrite.Drawing(filename, size = ((width+6)*px, (height+6)*px))
-        dwg.add(dwg.rect(insert=(3*px, 3*px), size=(width*px, height*px), fill='white', stroke='black', stroke_width=3))
-        for x,y,w,h in shapes:
-            rect = dwg.add(dwg.rect(insert=(x*px, y*px), size=(w*px, h*px)))
-            rect.fill('white',opacity=0.5).stroke('black', width=3)
-        dwg.save()
+         gen = SVGGenerator(shapes)
+
+         gen.generate_svg(filename, width, height)
+
+
+        # dwg = svgwrite.Drawing(filename, size = ((width+self.SVG_BOUNDARY)*px, (height+self.SVG_BOUNDARY)*px))
+        #
+        # dwg.add(dwg.rect(insert=(3*px, 3*px), size=(width*px, height*px), fill='white', stroke='black', stroke_width=3))
+        # for entry in shapes:
+        #     shape = entry['shape']
+        #     if shape == self.CIRCLE:
+        #         cx, cy = entry['center']
+        #         r = entry['radius']
+        #         circle = dwg.add(dwg.circle(center=(cx*px, cy*px),r=r*px))
+        #         circle.fill('white',opacity=0.5).stroke('black', width=3)
+        #     if shape == self.RECT:
+        #         pts = entry['points']
+        #         print pts
+        #         rect = dwg.add(dwg.polyline(pts, stroke = 'black', fill='none'))
+        #     elif shape == self.TRIANGLE:
+        #         points = entry['points']
+        #         print points
+        #         triangle = dwg.add(dwg.polyline(points))
+        #
+        # dwg.save()
 
 
 # global helper functions
@@ -388,7 +386,7 @@ def angle(v1, v2):
     # else:
     # return a2
 
-def withinDistance(p1, p2, distance):
+def within_distance(p1, p2, distance):
     return p1 >= p2 and p1-p2 <= distance
 
 sd = ShapeDetector()
