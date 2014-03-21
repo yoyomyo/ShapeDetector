@@ -16,8 +16,14 @@ class TextDetector:
         self.svm = None
 
     def train(self, dir):
-        if os.path.isfile("feat.data"): os.remove("feat.data")
-        if os.path.isfile("tag.data"):os.remove("tag.data")
+        if os.path.isfile("feat1.data"): os.remove("feat1.data")
+        if os.path.isfile("tag1.data"):os.remove("tag1.data")
+
+        if os.path.isfile("feat2.data"): os.remove("feat2.data")
+        if os.path.isfile("tag2.data"):os.remove("tag2.data")
+
+        if os.path.isfile("feat3.data"): os.remove("feat3.data")
+        if os.path.isfile("tag3.data"):os.remove("tag3.data")
 
         for c in [0,1]:
             subdir = os.path.join(dir,str(c))
@@ -29,7 +35,9 @@ class TextDetector:
                         color, bw_img = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
                         self.get_training_samples(color, bw_img, c)
 
-        self.svm = self.get_classifier()
+        self.svm1 = self.get_classifier('feat1.data', 'tag1.data')
+        self.svm2 = self.get_classifier('feat2.data', 'tag2.data')
+        self.svm3 = self.get_classifier('feat3.data', 'tag3.data')
 
     def test(self, dir):
         i = 1
@@ -53,11 +61,18 @@ class TextDetector:
         for cnt in contours:
             area = cv2.contourArea(cnt)
             if area > 10:
-                feature = self.get_features(cnt)
-                feature = np.array([feature], np.float32)
-                is_shape = self.svm.predict(feature)
+                feature1, feature2, feature3 = self.get_features(cnt)
+
+                feature1 = np.array([feature1], np.float32)
+                feature2 = np.array([feature2], np.float32)
+                feature3 = np.array([feature3], np.float32)
+
+                is_shape1 = self.svm1.predict(feature1)
+                is_shape2 = self.svm2.predict(feature2)
+                is_shape3 = self.svm3.predict(feature3)
+
                 [x,y,w,h] = cv2.boundingRect(cnt)
-                if is_shape:
+                if is_shape2 and is_shape3 and is_shape1:
                     cv2.rectangle(color_img,(x,y),(x+w,y+h),BLUE,1)
                     # cv2.drawContours(color_img,[cnt],-1,(0,255,0),1)
                     # cv2.drawContours(color_img,[cnt],-1,(0,255,0),1)
@@ -66,11 +81,15 @@ class TextDetector:
                 else:
                    cv2.rectangle(color_img,(x,y),(x+w,y+h),GREEN,1)
             idx += 1
-        show_image_in_window('color', color_img)
+        #show_image_in_window('color', color_img)
+        cv2.imwrite("result" + str(index) + ".jpg", color_img)
     # parameter used in this function:
     # area threshold: 100
     def get_training_samples(self,color_img, bw_img, c):
-        features =  np.empty((0,2))
+        features1 =  np.empty((0,1))
+        features2 =  np.empty((0,1))
+        features3 =  np.empty((0,1))
+
         tags = []
         # keys = [48,49] # key responses are 0 or 1
 
@@ -84,7 +103,7 @@ class TextDetector:
 
                 # approx = cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True)
                 # cv2 .drawContours(color_img,[approx],-1,(0,255,0),1)
-                feature = self.get_features(cnt)
+                feature1, feature2, feature3 = self.get_features(cnt)
 
                 #cv2.imshow('norm',color_img)
                 # key = cv2.waitKey(0)
@@ -93,18 +112,30 @@ class TextDetector:
                 #     sys.exit()
                 # elif key in keys:
                 tags.append(c)
-                sample = np.array([feature])
-                features = np.append(features,sample,0)
+                sample1 = np.array([[feature1]])
+                sample2 = np.array([[feature2]])
+                sample3 = np.array([[feature3]])
+
+                features1 = np.append(features1,sample1,0)
+                features2 = np.append(features2,sample2,0)
+                features3 = np.append(features3,sample3,0)
 
         tags = np.array(tags,np.float32)
         tags = tags.reshape((tags.size,1))
 
-        np.savetxt('tmp_feat.data',features)
+        np.savetxt('tmp_feat1.data',features1)
+        np.savetxt('tmp_feat2.data',features2)
+        np.savetxt('tmp_feat3.data',features3)
         np.savetxt('tmp_tag.data',tags)
 
         # append temp data to training data
-        append_result_to_file("feat.data", "tmp_feat.data")
-        append_result_to_file("tag.data", "tmp_tag.data")
+        append_result_to_file("feat1.data", "tmp_feat1.data")
+        append_result_to_file("feat2.data", "tmp_feat2.data")
+        append_result_to_file("feat3.data", "tmp_feat3.data")
+
+        append_result_to_file("tag1.data", "tmp_tag.data")
+        append_result_to_file("tag2.data", "tmp_tag.data")
+        append_result_to_file("tag3.data", "tmp_tag.data")
 
         cv2.destroyAllWindows()
 
@@ -126,11 +157,11 @@ class TextDetector:
         compactness = float(w+h) / perimeter
         solidity = get_solidity(cnt)
         convex_hull_ratio = float(area)/w*h
-        return [solidity, area]
+        return solidity, convex_hull_ratio, area,
 
-    def get_classifier(self):
-        samples = np.loadtxt('feat.data',np.float32)
-        responses = np.loadtxt('tag.data',np.float32)
+    def get_classifier(self, feat, tag):
+        samples = np.loadtxt(feat,np.float32)
+        responses = np.loadtxt(tag,np.float32)
         responses = responses.reshape((responses.size,1))
         model = cv2.SVM()
         model.train(samples,responses)
