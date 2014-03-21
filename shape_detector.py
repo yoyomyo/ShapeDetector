@@ -3,6 +3,7 @@ import os,sys,math,pdb
 import numpy as np
 import cv2
 from svg_generator import *
+from project_helpers import *
 
 class ShapeDetector:
 
@@ -21,31 +22,32 @@ class ShapeDetector:
 
     NUM_CLASS = 3
 
-    NESTED_CONTOUR_DISTANCE = 10    #if a two contours are nested and their boundaries
+    NESTED_CONTOUR_DISTANCE = 15    #if a two contours are nested and their boundaries
                                     # are within 10px then remove the innner conotur
     PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should depend on how big the contour is
 
     ALIGNMENT_DRIFT_THRESHOLD = 5
 
     def get_data(self, dir):
+        i = 0
         for root, subdirs, files in os.walk(dir):
             for file in files:
                 if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
                     path_to_img = os.path.join(root,file)
                     # print path_to_img, img_class
                     # pdb.set_trace()
-                    self.get_shapes_from_img(path_to_img)
+                    self.get_shapes_from_img(path_to_img, i)
+                    i += 1
 
 
-    # get shape features from img, put them into ,
-    # and store relevant shape into
-    def get_shapes_from_img(self, path_to_img):
+    # get shape features from img
+    def get_shapes_from_img(self, path_to_img, num):
         img = cv2.imread(path_to_img)
         color, bw_img = self.preprocess_image(img)
         shapes = self.get_shapes(color, bw_img)
         h,w= bw_img.shape
 
-        self.generate_svg(shapes, 'test.svg', w, h)
+        self.generate_svg(shapes, 'test'+ str(num) +'.svg', w, h)
 
     def preprocess_image(self, img):
         w,h,c = img.shape
@@ -112,7 +114,6 @@ class ShapeDetector:
                     'shape':self.RECT,
                     'points':[tuple(pt) for pt in box]+[tuple(box[0])]
                 })
-                print [tuple(pt) for pt in box]+[tuple(box[0])]
                 cv2.drawContours(color_img,[box],0,self.YELLOW,2)
 
             elif shape == self.TRIANGLE:
@@ -127,7 +128,7 @@ class ShapeDetector:
                 })
 
         # convert shape parameter to svg on image
-        self.show_image_in_window('c', color_img)
+        show_image_in_window('c', color_img)
         return shapes
 
 
@@ -302,92 +303,64 @@ class ShapeDetector:
         extent = float(area)/rect_area
         return extent
 
-    def show_image_in_window(self, win_name, img):
-        cv2.imshow(win_name,img)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
 
     # given a list of shapes, draw the shape in svg
     # and save the svg to a file in the end
     def generate_svg(self, shapes, filename, width, height):
-
          gen = SVGGenerator(shapes)
-
          gen.generate_svg(filename, width, height)
 
+# # global helper functions
+# def midpoint(p1, p2):
+#     return (p1+p2)/2
+#
+# def normalize(v):
+#     return v/np.linalg.norm(v)
+#
+# def dist(p1,p2):
+#     return np.linalg.norm(p1-p2)
+#
+# def draw_line(img, start, vec, color):
+#     end = tuple(start + vec)
+#     cv2.line(img, tuple(start), end, color)
+#
+# def dotproduct(v1, v2):
+#   return sum((a*b) for a, b in zip(v1, v2))
+#
+# def length(v):
+#   return math.sqrt(dotproduct(v, v))
+#
+# def angle_old(v1, v2):
+#     cosine = dotproduct(v1, v2) / (length(v1) * length(v2)+0.0001)
+#     # print math.acos(cosine)/math.pi*180
+#     return math.acos(cosine)
+#
+# def angle(v1, v2):
+#     x1, y1 = v1
+#     x2, y2 = v2
+#     a1 = math.atan2(y1, x1)
+#     a2 = math.atan2(y2, x2)
+#
+#     # first convert angles to 0 and pi range
+#     a1 = math.atan2(-y1, -x1) if a1 < 0.0 else a1
+#     a2 = math.atan2(-y2, -x2) if a2 < 0.0 else a2
+#
+#     if (a1 >= 0.5*math.pi and a2 >= 0.5*math.pi) or (a1 <= 0.5* math.pi and a2 <= 0.5*math.pi):
+#         v =  math.fabs(a1-a2)
+#     elif a1 >= 0.5*math.pi and a2 <= 0.5*math.pi:
+#         v = min(math.pi - a1 + a2, a1-a2)
+#     elif a2 >= 0.5*math.pi and a1 <= 0.5*math.pi:
+#         v = min(math.pi - a2 + a1, a2-a1)
+#     return v
+#     #
+#     # if (a1 < 0.0 and a2 < 0.0) or (a1 > 0.0 and a2 > 0.0):
+#     #     return math.fabs(a1-a2)
+#     # else:
+#     # return a2
+#
+# def within_distance(p1, p2, distance):
+#     return p1 >= p2 and p1-p2 <= distance
 
-        # dwg = svgwrite.Drawing(filename, size = ((width+self.SVG_BOUNDARY)*px, (height+self.SVG_BOUNDARY)*px))
-        #
-        # dwg.add(dwg.rect(insert=(3*px, 3*px), size=(width*px, height*px), fill='white', stroke='black', stroke_width=3))
-        # for entry in shapes:
-        #     shape = entry['shape']
-        #     if shape == self.CIRCLE:
-        #         cx, cy = entry['center']
-        #         r = entry['radius']
-        #         circle = dwg.add(dwg.circle(center=(cx*px, cy*px),r=r*px))
-        #         circle.fill('white',opacity=0.5).stroke('black', width=3)
-        #     if shape == self.RECT:
-        #         pts = entry['points']
-        #         print pts
-        #         rect = dwg.add(dwg.polyline(pts, stroke = 'black', fill='none'))
-        #     elif shape == self.TRIANGLE:
-        #         points = entry['points']
-        #         print points
-        #         triangle = dwg.add(dwg.polyline(points))
-        #
-        # dwg.save()
-
-
-# global helper functions
-def midpoint(p1, p2):
-    return (p1+p2)/2
-
-def normalize(v):
-    return v/np.linalg.norm(v)
-
-def dist(p1,p2):
-    return np.linalg.norm(p1-p2)
-
-def draw_line(img, start, vec, color):
-    end = tuple(start + vec)
-    cv2.line(img, tuple(start), end, color)
-
-def dotproduct(v1, v2):
-  return sum((a*b) for a, b in zip(v1, v2))
-
-def length(v):
-  return math.sqrt(dotproduct(v, v))
-
-def angle_old(v1, v2):
-    cosine = dotproduct(v1, v2) / (length(v1) * length(v2)+0.0001)
-    # print math.acos(cosine)/math.pi*180
-    return math.acos(cosine)
-
-def angle(v1, v2):
-    x1, y1 = v1
-    x2, y2 = v2
-    a1 = math.atan2(y1, x1)
-    a2 = math.atan2(y2, x2)
-
-    # first convert angles to 0 and pi range
-    a1 = math.atan2(-y1, -x1) if a1 < 0.0 else a1
-    a2 = math.atan2(-y2, -x2) if a2 < 0.0 else a2
-
-    if (a1 >= 0.5*math.pi and a2 >= 0.5*math.pi) or (a1 <= 0.5* math.pi and a2 <= 0.5*math.pi):
-        v =  math.fabs(a1-a2)
-    elif a1 >= 0.5*math.pi and a2 <= 0.5*math.pi:
-        v = min(math.pi - a1 + a2, a1-a2)
-    elif a2 >= 0.5*math.pi and a1 <= 0.5*math.pi:
-        v = min(math.pi - a2 + a1, a2-a1)
-    return v
-    #
-    # if (a1 < 0.0 and a2 < 0.0) or (a1 > 0.0 and a2 > 0.0):
-    #     return math.fabs(a1-a2)
-    # else:
-    # return a2
-
-def within_distance(p1, p2, distance):
-    return p1 >= p2 and p1-p2 <= distance
 
 sd = ShapeDetector()
 sd.get_data('test')

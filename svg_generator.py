@@ -34,14 +34,11 @@ class SVGGenerator:
                 ellipse = dwg.add(dwg.ellipse(center=(center[0]*px, center[1]*px), r=(0.5*height*px,0.5*width*px)))
                 ellipse.fill('none').stroke('black')
                 ellipse.rotate(degree-90, center=center)
-
             if shape == self.RECT:
                 pts = entry['points']
-                print pts
                 rect = dwg.add(dwg.polyline(pts, stroke = 'black', fill='none'))
             elif shape == self.TRIANGLE:
                 points = entry['points']
-                print points
                 triangle = dwg.add(dwg.polyline(points, stroke = 'black', fill='none'))
 
         dwg.save()
