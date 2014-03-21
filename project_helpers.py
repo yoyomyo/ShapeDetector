@@ -4,6 +4,18 @@ import math
 import numpy as np
 import cv2
 
+
+
+
+
+# global constants
+
+
+
+
+
+
+
 CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
 
 MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
@@ -26,14 +38,22 @@ PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should dep
 ALIGNMENT_DRIFT_THRESHOLD = 5
 
 
+
+
+
+
+
+
+# contour related
+
+
+
+
+
+
 def filter_contours(contours):
     contours = filter(lambda cnt: len(cnt) > CONTOUR_THRESHOLD, contours)
     contours = remove_nested_contours(contours)
-    return contours
-
-def connect_contours(contours):
-    contours = filter(lambda cnt: len(cnt) > CONTOUR_THRESHOLD, contours)
-    contours = merge_contours(contours)
     return contours
 
 def remove_nested_contours(contours):
@@ -58,17 +78,6 @@ def remove_nested_contours(contours):
 
     indexes = contour_table.keys()
     return [contours[i] for i in indexes]
-
-
-def merge_contours(contours):
-    merged = []
-    boundingBoxes = []
-    for cnt in contours:
-        x1,y1,w1,h1 = cv2.boundingRect(cnt)
-        for box in boundingBoxes:
-            x2,y2,w2,h2 = box
-
-    return merged.values()
 
 # return 1 if extreme_points2 is nested within extreme_points1
 # return 2 if extreme_points1 is nested within extreme_points2
@@ -114,6 +123,55 @@ def get_contour_extreme_points(cnt):
     bottommost = tuple(cnt[cnt[:,:,1].argmax()][0])
     return [leftmost, rightmost, topmost, bottommost]
 
+def get_contour_centroid(cnt):
+    # compute the centroid of the contour to help compute chord normals and orientation
+    M = cv2.moments(cnt)
+    centroid_x = int(M['m10']/M['m00'])
+    centroid_y = int(M['m01']/M['m00'])
+    return np.array([centroid_x,centroid_y])
+
+# used to get text regions in a sketch
+def connect_contours(contours):
+    contours = filter(lambda cnt: len(cnt) > CONTOUR_THRESHOLD, contours)
+    contours = merge_contours(contours)
+    return contours
+
+def merge_contours(contours):
+    merged = []
+    boundingBoxes = []
+    for cnt in contours:
+        x1,y1,w1,h1 = cv2.boundingRect(cnt)
+        for box in boundingBoxes:
+            x2,y2,w2,h2 = box
+    return merged.values()
+
+
+
+
+
+
+
+
+
+
+
+# math computation
+
+
+
+
+
+
+
+
+
+def is_horizontal_box(self, box):
+    br, bl, tl, tr = box
+    b_diff = abs(br[1]-bl[1])
+    r_diff = abs(br[0]-tr[0])
+    l_diff = abs(tl[0]-bl[0])
+    t_diff = abs(tl[1]-tr[1])
+    return all(x< 5 for x in [b_diff,r_diff,l_diff,t_diff])
 
 # global helper functions
 def midpoint(p1, p2):
@@ -158,6 +216,61 @@ def angle(v1, v2):
     #     return math.fabs(a1-a2)
     # else:
     # return a2
+
+def preprocess_image(img, max_img_dim = MAX_IMG_DIM, morph_dim = MORPH_DIM):
+    w,h,c = img.shape
+    while w > max_img_dim or h > max_img_dim:
+        img = cv2.pyrDown(img)
+        w,h,c = img.shape
+    # convert image to grayscale
+    imgray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+    # generate adaptive thresholding parameters
+    thresh = cv2.adaptiveThreshold(imgray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
+                                    cv2.THRESH_BINARY,21, 10)
+    ret,thresh = cv2.threshold(thresh,127,255,0)
+    # apply erosion and dilation, this is for trying to close gaps in a contour
+    element1 = cv2.getStructuringElement(cv2.MORPH_RECT,morph_dim)
+    element2 = cv2.getStructuringElement(cv2.MORPH_RECT,morph_dim)
+    img2 = cv2.erode(thresh,element2)
+    img3 = cv2.dilate(img2,element1)
+    # use the complement of the dilated image
+    img3 = 255-img3
+    # show_image_in_window('preprocess', img3)
+    # cv2.imshow('black ',img3)
+    return img,img3
+
+def get_solidity(cnt):
+    area = cv2.contourArea(cnt)
+    hull = cv2.convexHull(cnt)
+    hull_area = cv2.contourArea(hull)
+    solidity = float(area)/hull_area
+    return solidity
+
+def get_extent(cnt):
+    area = cv2.contourArea(cnt)
+    x,y,w,h = cv2.boundingRect(cnt)
+    rect_area = w*h
+    extent = float(area)/rect_area
+    return extent
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# append file2 to file1
+def append_result_to_file(file1, file2):
+    with open(file1, "a") as f1:
+        with open(file2, "r") as f2:
+            f1.write(f2.read())
 
 def show_image_in_window(win_name, img):
     cv2.imshow(win_name,img)

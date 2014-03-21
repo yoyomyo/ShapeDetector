@@ -34,11 +34,8 @@ class ShapeDetector:
             for file in files:
                 if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
                     path_to_img = os.path.join(root,file)
-                    # print path_to_img, img_class
-                    # pdb.set_trace()
                     self.get_shapes_from_img(path_to_img, i)
                     i += 1
-
 
     # get shape features from img
     def get_shapes_from_img(self, path_to_img, num):
@@ -49,27 +46,6 @@ class ShapeDetector:
 
         self.generate_svg(shapes, 'test'+ str(num) +'.svg', w, h)
 
-    # def preprocess_image(self, img):
-    #     w,h,c = img.shape
-    #     while w > self.MAX_IMG_DIM or h > self.MAX_IMG_DIM:
-    #         img = cv2.pyrDown(img)
-    #         w,h,c = img.shape
-    #     # convert image to grayscale
-    #     imgray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
-    #     # generate adaptive thresholding parameters
-    #     thresh = cv2.adaptiveThreshold(imgray,255,cv2.ADAPTIVE_THRESH_GAUSSIAN_C,\
-    #                                     cv2.THRESH_BINARY,21, 10)
-    #     ret,thresh = cv2.threshold(thresh,127,255,0)
-    #     # apply erosion and dilation, this is for trying to close gaps in a contour
-    #     element1 = cv2.getStructuringElement(cv2.MORPH_RECT,self.MORPH_DIM)
-    #     element2 = cv2.getStructuringElement(cv2.MORPH_RECT,self.MORPH_DIM)
-    #     img2 = cv2.erode(thresh,element2)
-    #     img3 = cv2.dilate(img2,element1)
-    #     # use the complement of the dilated image
-    #     img3 = 255-img3
-    #     #self.show_image_in_window('preprocess', img3)
-    #     return img,img3
-
     def get_shapes(self, color_img, bw_img):
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         contours =  filter_contours(contours)
@@ -78,12 +54,11 @@ class ShapeDetector:
             points = self.get_key_points(cnt)
             shape = self.infer_shape_from_key_points(points, cnt)
 
-
             # for pt in points:
             #     cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
             #     #txt = "%.2f" % (d/math.pi*180)
             #     #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-            # self.show_image_in_window('c', color_img)
+            #   show_image_in_window('c', color_img)
 
             if shape == self.CIRCLE:
                 (x,y),radius = cv2.minEnclosingCircle(cnt)
@@ -211,150 +186,12 @@ class ShapeDetector:
         else:
             return a1
 
-    # def get_contour_centroid(self, cnt):
-    #     # compute the centroid of the contour to help compute chord normals and orientation
-    #     M = cv2.moments(cnt)
-    #     centroid_x = int(M['m10']/M['m00'])
-    #     centroid_y = int(M['m01']/M['m00'])
-    #     return np.array([centroid_x,centroid_y])
-
-    # def get_contour_extreme_points(self, cnt):
-    #     leftmost = tuple(cnt[cnt[:,:,0].argmin()][0])
-    #     rightmost = tuple(cnt[cnt[:,:,0].argmax()][0])
-    #     topmost = tuple(cnt[cnt[:,:,1].argmin()][0])
-    #     bottommost = tuple(cnt[cnt[:,:,1].argmax()][0])
-    #     return [leftmost, rightmost, topmost, bottommost]
-
-    # def filter_contours(self, contours):
-    #     contours = filter(lambda cnt: len(cnt) > self.CONTOUR_THRESHOLD, contours)
-    #     contours = self.remove_nested_contours(contours)
-    #     return contours
-
-    # def remove_nested_contours(self, contours):
-    #     contour_table = {}
-    #     for i, cnt in enumerate(contours):
-    #         to_add = self.get_contour_extreme_points(cnt)
-    #         if len(contour_table) == 0:
-    #             contour_table[i] = to_add
-    #         else:
-    #             to_replace = i
-    #             for k in contour_table:
-    #                 flag = self.are_nested_contour(contour_table[k], to_add)
-    #                 if flag == 1:
-    #                     # former contour is larger, do not add
-    #                     to_replace = -1
-    #                 elif flag == 2:
-    #                     # latter contour is larger, replace
-    #                     to_replace = k
-    #
-    #             if to_replace != -1:
-    #                 contour_table[to_replace] = to_add
-    #
-    #     indexes = contour_table.keys()
-    #     return [contours[i] for i in indexes]
-
-    # return 1 if extreme_points2 is nested within extreme_points1
-    # return 2 if extreme_points1 is nested within extreme_points2
-    # otherwise return 3
-    # def are_nested_contour(self, extreme_points1, extreme_points2):
-    #     left1, right1, top1, bottom1 = extreme_points1
-    #     left2, right2, top2, bottom2 = extreme_points2
-    #     xl1, yl1 = left1
-    #     xl2, yl2 = left2
-    #     xr1, yr1 = right1
-    #     xr2, yr2 = right2
-    #     xt1, yt1 = top1
-    #     xt2, yt2 = top2
-    #     xb1, yb1 = bottom1
-    #     xb2, yb2 = bottom2
-    #
-    #     a = self.within_contour_distance(xl1, xl2)
-    #     b = self.within_contour_distance(xr2, xr1)
-    #     c = self.within_contour_distance(yt1, yt2)
-    #     d = self.within_contour_distance(yb2, yb1)
-    #
-    #     e = self.within_contour_distance(xl2, xl1)
-    #     f = self.within_contour_distance(xr1, xr2)
-    #     g = self.within_contour_distance(yt2, yt1)
-    #     h = self.within_contour_distance(yb1, yb2)
-    #
-    #     if e and f and g and h:
-    #         return 1
-    #     elif a and b and c and d:
-    #         return 2
-    #     return 3
-    #
-    # def within_contour_distance(self, p1, p2):
-    #     return within_distance(p1,p2,self.NESTED_CONTOUR_DISTANCE)
-    #
-    # def is_horizontal_box(self, box):
-    #     br, bl, tl, tr = box
-    #     b_diff = abs(br[1]-bl[1])
-    #     r_diff = abs(br[0]-tr[0])
-    #     l_diff = abs(tl[0]-bl[0])
-    #     t_diff = abs(tl[1]-tr[1])
-    #     return all(x< 5 for x in [b_diff,r_diff,l_diff,t_diff])
-
     # given a list of shapes, draw the shape in svg
     # and save the svg to a file in the end
     def generate_svg(self, shapes, filename, width, height):
          gen = SVGGenerator(shapes)
          gen.generate_svg(filename, width, height)
 
-# # global helper functions
-# def midpoint(p1, p2):
-#     return (p1+p2)/2
-#
-# def normalize(v):
-#     return v/np.linalg.norm(v)
-#
-# def dist(p1,p2):
-#     return np.linalg.norm(p1-p2)
-#
-# def draw_line(img, start, vec, color):
-#     end = tuple(start + vec)
-#     cv2.line(img, tuple(start), end, color)
-#
-# def dotproduct(v1, v2):
-#   return sum((a*b) for a, b in zip(v1, v2))
-#
-# def length(v):
-#   return math.sqrt(dotproduct(v, v))
-#
-# def angle_old(v1, v2):
-#     cosine = dotproduct(v1, v2) / (length(v1) * length(v2)+0.0001)
-#     # print math.acos(cosine)/math.pi*180
-#     return math.acos(cosine)
-#
-# def angle(v1, v2):
-#     x1, y1 = v1
-#     x2, y2 = v2
-#     a1 = math.atan2(y1, x1)
-#     a2 = math.atan2(y2, x2)
-#
-#     # first convert angles to 0 and pi range
-#     a1 = math.atan2(-y1, -x1) if a1 < 0.0 else a1
-#     a2 = math.atan2(-y2, -x2) if a2 < 0.0 else a2
-#
-#     if (a1 >= 0.5*math.pi and a2 >= 0.5*math.pi) or (a1 <= 0.5* math.pi and a2 <= 0.5*math.pi):
-#         v =  math.fabs(a1-a2)
-#     elif a1 >= 0.5*math.pi and a2 <= 0.5*math.pi:
-#         v = min(math.pi - a1 + a2, a1-a2)
-#     elif a2 >= 0.5*math.pi and a1 <= 0.5*math.pi:
-#         v = min(math.pi - a2 + a1, a2-a1)
-#     return v
-#     #
-#     # if (a1 < 0.0 and a2 < 0.0) or (a1 > 0.0 and a2 > 0.0):
-#     #     return math.fabs(a1-a2)
-#     # else:
-#     # return a2
-#
-# def within_distance(p1, p2, distance):
-#     return p1 >= p2 and p1-p2 <= distance
-
 
 sd = ShapeDetector()
 sd.get_data('test')
-
-# svm = sd.train_classifier()
-# sd.test_classifier('test/2.jpg', svm)

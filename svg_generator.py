@@ -2,9 +2,10 @@ __author__ = 'yoyomyo'
 
 import pdb
 import svgwrite
-from svgwrite import px, cm, mm, rgb, deg
+from svgwrite import px, deg
 
 # this class includes some logic to align the shapes
+
 class SVGGenerator:
 
     CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
