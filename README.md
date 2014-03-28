@@ -1,4 +1,4 @@
 ShapeDetector
 =============
 
-A script that detects circles and rectangles in an image
+A script that detects circles, ellipses, triangles and rectangles in an image
