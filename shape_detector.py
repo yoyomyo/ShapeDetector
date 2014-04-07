@@ -91,11 +91,12 @@ class ShapeDetector:
 
                 hor_box = is_horizontal_box(box)
                 box = hor_box if hor_box else box
-                box = np.int0(  (np.array(box)) )
+
 
                 # find if this box is a form/table
                 rectangles.append(box)
 
+                box = np.int0(  (np.array(box)) )
                 shapes.append({
                     'shape':self.RECT,
                     'points':[tuple(pt) for pt in box]+[tuple(box[0])],
@@ -187,12 +188,13 @@ class ShapeDetector:
             return self.RECT
 
 
-    def find_table(self, rectangles):
-        for box in rectangles:
-            l = box[0][0]
-            r = box[2][0]
-            t = box[0][1]
-            b = box[2][1]
+    def find_table(self, box, img):
+        # horizontally scan the rect twice to find points interects the scan line
+        # vertically scan the rect twice
+        l = box[0][0]
+        r = box[2][0]
+        t = box[0][1]
+        b = box[2][1]
 
         h,w = img.shape
         # cv2.rectangle(img, (l,t), (r,b), (255,255,255), 2)
