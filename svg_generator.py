@@ -8,7 +8,7 @@ from svgwrite import px, deg
 
 class SVGGenerator:
 
-    CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
+    CIRCLE,ELLIPSE,RECT,TRIANGLE, LINE = 0,1,2,3,4
     ALIGNMENT_DRIFT_THRESHOLD = 5
     SVG_BOUNDARY = 6
     DEBUG = True
@@ -39,9 +39,12 @@ class SVGGenerator:
             if shape == self.RECT:
                 pts = entry['points']
                 rect = dwg.add(dwg.polyline(pts, stroke = 'black', fill='none'))
-            elif shape == self.TRIANGLE:
+            if shape == self.TRIANGLE:
                 points = entry['points']
                 triangle = dwg.add(dwg.polyline(points, stroke = 'black', fill='none'))
+            if shape == self.LINE:
+                points = entry['points']
+                line = dwg.add(dwg.line(points[0],points[1],stroke = 'black'))
 
         for text_area in self.texts:
             paragraph = dwg.add(dwg.g(font_size= text_area.bottom - text_area.top))

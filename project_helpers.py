@@ -29,7 +29,7 @@ PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should dep
 
 ALIGNMENT_DRIFT_THRESHOLD = 0.1
 
-
+TABLE_BOX_DISTANCE = 10
 
 
 
@@ -159,6 +159,25 @@ def is_horizontal_box(box):
 
     else:
         return []
+
+def overlap_boxes(box1, box2):
+    l1 = box1[0][0]
+    r1 = box1[2][0]
+    t1 = box1[0][1]
+    b1 = box1[2][1]
+
+    l2 = box2[0][0]
+    r2 = box2[2][0]
+    t2 = box2[0][1]
+    b2 = box2[2][1]
+
+    a = abs(l1-r2) < TABLE_BOX_DISTANCE and abs(t1-t2) < TABLE_BOX_DISTANCE
+    b = abs(r1-l2) < TABLE_BOX_DISTANCE and abs(t1-t2) < TABLE_BOX_DISTANCE
+    c = abs(b1-t2) < TABLE_BOX_DISTANCE and abs(l1-l2) < TABLE_BOX_DISTANCE
+    d = abs(t1-b2) < TABLE_BOX_DISTANCE and abs(l1-l2) < TABLE_BOX_DISTANCE
+
+    return a or b or c or d
+
 
 # global helper functions
 def midpoint(p1, p2):

@@ -4,10 +4,11 @@ import numpy as np
 import cv2
 from svg_generator import *
 from project_helpers import *
+from Queue import deque
 
 class ShapeDetector:
 
-    CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
+    CIRCLE,ELLIPSE,RECT,TRIANGLE, LINE = 0,1,2,3,4
 
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
     MORPH_DIM = (3,3)
@@ -86,22 +87,21 @@ class ShapeDetector:
                 rect = cv2.minAreaRect(cnt)
                 box = cv2.cv.BoxPoints(rect)
 
-
                 # make the box horizontal if the box is horizontal
 
                 hor_box = is_horizontal_box(box)
                 box = hor_box if hor_box else box
-
+                box = np.int0(  (np.array(box)) )
 
                 # find if this box is a form/table
                 rectangles.append(box)
 
-                box = np.int0(  (np.array(box)) )
-                shapes.append({
-                    'shape':self.RECT,
-                    'points':[tuple(pt) for pt in box]+[tuple(box[0])],
-                })
-                # cv2.drawContours(color_img,[box],0,self.YELLOW,2)
+
+                # shapes.append({
+                #     'shape':self.RECT,
+                #     'points':[tuple(pt) for pt in box]+[tuple(box[0])],
+                # })
+                #cv2.drawContours(color_img,[box],0,self.YELLOW,2)
 
             elif shape == self.TRIANGLE:
                 # pdb.set_trace()
@@ -115,7 +115,19 @@ class ShapeDetector:
                 })
 
         # convert shape parameter to svg on image
-        # show_image_in_window('c', color_img)
+        lines, boxes = self.find_table_box(rectangles, bw_img)
+
+        for line in lines:
+            shapes.append({
+                'shape':self.LINE,
+                'points':line
+            })
+        for box in boxes:
+            shapes.append({
+                'shape':self.RECT,
+                'points':[tuple(pt) for pt in box]+[tuple(box[0])],
+            })
+
         return shapes
 
     def get_key_points(self, cnt):
@@ -188,40 +200,51 @@ class ShapeDetector:
             return self.RECT
 
 
-    def find_table(self, box, img):
-        # horizontally scan the rect twice to find points interects the scan line
-        # vertically scan the rect twice
-        l = box[0][0]
-        r = box[2][0]
-        t = box[0][1]
-        b = box[2][1]
-
+    def find_table_box(self, rectangles, img):
         h,w = img.shape
-        # cv2.rectangle(img, (l,t), (r,b), (255,255,255), 2)
-        # cv2.circle(img, (l,t), 10, (255,255,255), thickness=3, lineType=8, shift=0)
-        # cv2.circle(img, (l,b), 10, (255,255,255), thickness=3, lineType=8, shift=0)
-        # cv2.circle(img, (r,t), 10, (255,255,255), thickness=3, lineType=8, shift=0)
-        # cv2.circle(img, (r,b), 10, (255,255,255), thickness=3, lineType=8, shift=0)
+        table = {}
+        leftover_boxes =[]
+        lines = []
 
-        hor_intersections = []
-        for row in range(t, b, 10):
-            # print r
-            scan = img[row,l:r]
-            # print row
-            intersections = [x for x in range(l,r) if img[row,x] > 150]
-            # for x in range(l,r):
-            #     if img[row,x] > 200:
-            #         cv2.circle(img, (x,row), 1, (255,255,255), thickness=1, lineType=8, shift=0)
+        # this is to help find the locations of horizontal and verticle lines
+        hor = []
+        ver = []
+        for i,box in enumerate(rectangles):
+            table[i] = []
 
-            # hor_intersections.append(intersection)
-            if len(intersections) > 0 and len(intersections) <= 10:
-                print intersections
-                [cv2.circle(img, (x,row), 1, (100,100,100), thickness=1, lineType=8, shift=0) for x in intersections]
-            #cv2.circle(img, (l,row), 10, (255,255,255), thickness=3, lineType=8, shift=0)
-        show_image_in_window('intersection', img)
-        # pdb.set_trace()
+        for i,box1 in enumerate(rectangles):
+            for j,box2 in enumerate(rectangles):
+                if j<=i: continue
+                if overlap_boxes(box1, box2):
+                    table[i].append(box2)
+                    table[j].append(box1)
+
+        for k in table:
+            box = rectangles[k]
+            if len(table[k])>=2:
+                for pt in box:
+                    ver.append(pt[0])
+                    hor.append(pt[1])
+            else:
+                leftover_boxes.append(box)
 
 
+        hor = np.array(hor)
+        ver = np.array(ver)
+        hor_bin = [i for i in range(0,h,30)]
+        ver_bin = [i for i in range(0,w,30)]
+        hor_hist, _ = np.histogram(hor, bins=hor_bin)
+        ver_hist, _ = np.histogram(ver, bins=ver_bin)
+
+        hor = [ (hor_bin[i] + hor_bin[i+1])/2 for i,x in enumerate(hor_hist) if x > 2 ]
+        ver = [ (ver_bin[i] + ver_bin[i+1])/2 for i,x in enumerate(ver_hist) if x > 2 ]
+
+        for y in ver:
+            lines.append(  [(y,hor[0]), (y,hor[-1])] )
+        for x in hor:
+            lines.append( [(ver[0],x), (ver[-1],x)] )
+
+        return lines, leftover_boxes
 
 
     def get_gradient_angle(self, prev, nxt):
