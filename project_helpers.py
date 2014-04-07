@@ -3,18 +3,10 @@ __author__ = 'yoyomyo'
 import math
 import numpy as np
 import cv2
-
-
-
-
+from operator import itemgetter
+from bisect import *
 
 # global constants
-
-
-
-
-
-
 
 CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
 
@@ -31,11 +23,11 @@ EPS = 0.0001                    # used to prevent the division by zero or taking
 
 NUM_CLASS = 3
 
-NESTED_CONTOUR_DISTANCE = 15    #if a two contours are nested and their boundaries
+NESTED_CONTOUR_DISTANCE = 15    # if a two contours are nested and their boundaries
                                 # are within 10px then remove the innner conotur
 PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should depend on how big the contour is
 
-ALIGNMENT_DRIFT_THRESHOLD = 5
+ALIGNMENT_DRIFT_THRESHOLD = 0.1
 
 
 
@@ -45,11 +37,6 @@ ALIGNMENT_DRIFT_THRESHOLD = 5
 
 
 # contour related
-
-
-
-
-
 
 def filter_contours(contours):
     contours = filter(lambda cnt: len(cnt) > CONTOUR_THRESHOLD, contours)
@@ -146,32 +133,32 @@ def merge_contours(contours):
     return merged.values()
 
 
+# return true if rect1 is within rect2
+# or rect2 is within rect1
+def are_nexted_rectangles(rect1, rect2):
+    left1, right1, top1, bottom1 = rect1
+    left2, right2, top2, bottom2 = rect2
+    one = left1<left2 and right1 > right2 and top1 < top2 and bottom1 > bottom2
+    two = left2<left1 and right2 > right1 and top2 < top1 and bottom2 > bottom1
+    return one or two
 
+# return coordinates of the box if box is horizontal
+# else return empty array
+def is_horizontal_box(box):
+    a,b,c,d = sorted(box, key=itemgetter(0,1))
+    e = abs(a[0] - b[0]) < ALIGNMENT_DRIFT_THRESHOLD * a[0]
+    f = abs(c[0] - d[0]) < ALIGNMENT_DRIFT_THRESHOLD * c[0]
+    g = abs(a[1] - c[1]) < ALIGNMENT_DRIFT_THRESHOLD * a[1]
+    h = abs(b[1] - d[1]) < ALIGNMENT_DRIFT_THRESHOLD * b[1]
+    if e and f and g and h:
+        left = (a[0] + b[0])/2
+        right = (c[0] + d[0])/2
+        top = min ( (a[1] + c[1])/2, (b[1] + d[1])/2)
+        bottom = max ( (a[1] + c[1])/2, (b[1] + d[1])/2)
+        return [ [left,top], [right,top], [right, bottom], [left,bottom] ]
 
-
-
-
-
-
-
-
-# math computation
-
-
-
-
-
-
-
-
-
-def is_horizontal_box(self, box):
-    br, bl, tl, tr = box
-    b_diff = abs(br[1]-bl[1])
-    r_diff = abs(br[0]-tr[0])
-    l_diff = abs(tl[0]-bl[0])
-    t_diff = abs(tl[1]-tr[1])
-    return all(x< 5 for x in [b_diff,r_diff,l_diff,t_diff])
+    else:
+        return []
 
 # global helper functions
 def midpoint(p1, p2):
@@ -252,16 +239,6 @@ def get_extent(cnt):
     rect_area = w*h
     extent = float(area)/rect_area
     return extent
-
-
-
-
-
-
-
-
-
-
 
 
 

@@ -13,8 +13,9 @@ class SVGGenerator:
     SVG_BOUNDARY = 6
     DEBUG = True
 
-    def __init__(self, shapes):
+    def __init__(self, shapes, texts):
         self.shapes = shapes
+        self.texts = texts
 
     # given a list of shapes, draw the shape in svg
     # and save the svg to a file in the end
@@ -41,6 +42,10 @@ class SVGGenerator:
             elif shape == self.TRIANGLE:
                 points = entry['points']
                 triangle = dwg.add(dwg.polyline(points, stroke = 'black', fill='none'))
+
+        for text_area in self.texts:
+            paragraph = dwg.add(dwg.g(font_size= text_area.bottom - text_area.top))
+            paragraph.add(dwg.text('text', (text_area.left+self.SVG_BOUNDARY, text_area.top+self.SVG_BOUNDARY )))
 
         dwg.save()
 

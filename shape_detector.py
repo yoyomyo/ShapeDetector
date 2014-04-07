@@ -26,7 +26,7 @@ class ShapeDetector:
                                     # are within 10px then remove the innner conotur
     PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should depend on how big the contour is
 
-    ALIGNMENT_DRIFT_THRESHOLD = 5
+    ALIGNMENT_DRIFT_THRESHOLD = 0.1
 
     def get_data(self, dir):
         i = 0
@@ -34,22 +34,24 @@ class ShapeDetector:
             for file in files:
                 if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
                     path_to_img = os.path.join(root,file)
-                    self.get_shapes_from_img(path_to_img, i)
+                    print path_to_img
+                    img = cv2.imread(path_to_img)
+                    shapes = self.get_shapes_from_img(img, i)
+                    h,w,c = img.shape
                     i += 1
+                    self.generate_svg(shapes, 'test'+ str(i) +'.svg', w, h)
 
     # get shape features from img
-    def get_shapes_from_img(self, path_to_img, num):
-        img = cv2.imread(path_to_img)
+    def get_shapes_from_img(self, contours, img, num):
         color, bw_img = preprocess_image(img)
-        shapes = self.get_shapes(color, bw_img)
-        h,w= bw_img.shape
+        shapes = self.get_shapes(contours, color, bw_img)
+        return shapes
 
-        self.generate_svg(shapes, 'test'+ str(num) +'.svg', w, h)
-
-    def get_shapes(self, color_img, bw_img):
-        contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
+    def get_shapes(self, contours, color_img, bw_img):
+        #contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         contours =  filter_contours(contours)
         shapes = [] # a shape is a dictionary containing necessary information to draw the shape in SVG
+        rectangles = [] # this will be used to detect tables
         for h, cnt in enumerate(contours):
             points = self.get_key_points(cnt)
             shape = self.infer_shape_from_key_points(points, cnt)
@@ -58,13 +60,13 @@ class ShapeDetector:
             #     cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
             #     #txt = "%.2f" % (d/math.pi*180)
             #     #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-            #   show_image_in_window('c', color_img)
+            # show_image_in_window('c', color_img)
 
             if shape == self.CIRCLE:
                 (x,y),radius = cv2.minEnclosingCircle(cnt)
                 center = (int(x),int(y))
                 radius = int(radius)
-                cv2.circle(color_img,center,radius,self.RED,2)
+                # cv2.circle(color_img,center,radius,self.RED,2)
                 shapes.append({
                     'shape':self.CIRCLE,
                     'center':(int(x),int(y)),
@@ -72,7 +74,7 @@ class ShapeDetector:
                 })
             elif shape == self.ELLIPSE:
                 ellipse = cv2.fitEllipse(cnt)
-                cv2.ellipse(color_img,ellipse,self.GREEN,2)
+                # cv2.ellipse(color_img,ellipse,self.GREEN,2)
                 shapes.append({
                     'shape':self.ELLIPSE,
                     'ellipse': ellipse
@@ -83,29 +85,37 @@ class ShapeDetector:
                 # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
                 rect = cv2.minAreaRect(cnt)
                 box = cv2.cv.BoxPoints(rect)
-                box = np.int0(box)
-                # pdb.set_trace()
+
+
+                # make the box horizontal if the box is horizontal
+
+                hor_box = is_horizontal_box(box)
+                box = hor_box if hor_box else box
+                box = np.int0(  (np.array(box)) )
+
+                # find if this box is a form/table
+                rectangles.append(box)
+
                 shapes.append({
                     'shape':self.RECT,
-                    'points':[tuple(pt) for pt in box]+[tuple(box[0])]
+                    'points':[tuple(pt) for pt in box]+[tuple(box[0])],
                 })
-                cv2.drawContours(color_img,[box],0,self.YELLOW,2)
+                # cv2.drawContours(color_img,[box],0,self.YELLOW,2)
 
             elif shape == self.TRIANGLE:
                 # pdb.set_trace()
                 points = np.int0(points)
-                cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
-                cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
-                cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
+                # cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
+                # cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
+                # cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
                 shapes.append({
                     'shape':self.TRIANGLE,
                     'points':[tuple(pt[0]) for pt in points] + [tuple(points[0][0])]
                 })
 
         # convert shape parameter to svg on image
-        show_image_in_window('c', color_img)
+        # show_image_in_window('c', color_img)
         return shapes
-
 
     def get_key_points(self, cnt):
         previous_gradient = None
@@ -177,6 +187,41 @@ class ShapeDetector:
             return self.RECT
 
 
+    def find_table(self, rectangles):
+        for box in rectangles:
+            l = box[0][0]
+            r = box[2][0]
+            t = box[0][1]
+            b = box[2][1]
+
+        h,w = img.shape
+        # cv2.rectangle(img, (l,t), (r,b), (255,255,255), 2)
+        # cv2.circle(img, (l,t), 10, (255,255,255), thickness=3, lineType=8, shift=0)
+        # cv2.circle(img, (l,b), 10, (255,255,255), thickness=3, lineType=8, shift=0)
+        # cv2.circle(img, (r,t), 10, (255,255,255), thickness=3, lineType=8, shift=0)
+        # cv2.circle(img, (r,b), 10, (255,255,255), thickness=3, lineType=8, shift=0)
+
+        hor_intersections = []
+        for row in range(t, b, 10):
+            # print r
+            scan = img[row,l:r]
+            # print row
+            intersections = [x for x in range(l,r) if img[row,x] > 150]
+            # for x in range(l,r):
+            #     if img[row,x] > 200:
+            #         cv2.circle(img, (x,row), 1, (255,255,255), thickness=1, lineType=8, shift=0)
+
+            # hor_intersections.append(intersection)
+            if len(intersections) > 0 and len(intersections) <= 10:
+                print intersections
+                [cv2.circle(img, (x,row), 1, (100,100,100), thickness=1, lineType=8, shift=0) for x in intersections]
+            #cv2.circle(img, (l,row), 10, (255,255,255), thickness=3, lineType=8, shift=0)
+        show_image_in_window('intersection', img)
+        # pdb.set_trace()
+
+
+
+
     def get_gradient_angle(self, prev, nxt):
         tangent = nxt - prev
         dx,dy = tangent[0]
@@ -193,5 +238,5 @@ class ShapeDetector:
          gen.generate_svg(filename, width, height)
 
 
-sd = ShapeDetector()
-sd.get_data('test')
+# sd = ShapeDetector()
+# sd.get_data('test')
