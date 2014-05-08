@@ -5,7 +5,7 @@ import numpy as np
 import cv2
 from operator import itemgetter
 from bisect import *
-
+import pdb
 # global constants
 
 CIRCLE,ELLIPSE,RECT,TRIANGLE = 0,1,2,3
@@ -38,8 +38,9 @@ TABLE_BOX_DISTANCE = 10
 
 # contour related
 
-def filter_contours(contours):
-    contours = filter(lambda cnt: len(cnt) > CONTOUR_THRESHOLD, contours)
+def filter_contours(contours, w, h):
+    # filter the contours based on the dimension of the img
+    contours = filter(lambda cnt: len(cnt) > 0.05*min(w,h), contours)
     contours = remove_nested_contours(contours)
     return contours
 
@@ -52,14 +53,13 @@ def remove_nested_contours(contours):
         else:
             to_replace = i
             for k in contour_table:
-                flag =  are_nested_contour(contour_table[k], to_add)
+                flag = are_nested_contour(contour_table[k], to_add)
                 if flag == 1:
                     # former contour is larger, do not add
                     to_replace = -1
                 elif flag == 2:
                     # latter contour is larger, replace
                     to_replace = k
-
             if to_replace != -1:
                 contour_table[to_replace] = to_add
 
@@ -260,7 +260,16 @@ def get_extent(cnt):
     return extent
 
 
+def draw_contours(contours, img):
+    for cnt in contours:
+        #cv2.drawContours(color_img,[cnt],-1,(0,255,0),1)
+        approx = cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True)
+        hull = cv2.convexHull(cnt)
+        x,y,w,h = cv2.boundingRect(cnt)
+        cv2.rectangle(img,(x,y),(x+w,y+h),(0,0,255),1)
+        #cv2.drawContours(img,[approx],-1,(0,255,0),1)
 
+    show_image_in_window('contour', img)
 
 # append file2 to file1
 def append_result_to_file(file1, file2):

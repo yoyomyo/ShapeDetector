@@ -4,64 +4,64 @@ import numpy as np
 import cv2
 from svg_generator import *
 from project_helpers import *
-from Queue import deque
 
 class ShapeDetector:
 
-    CIRCLE,ELLIPSE,RECT,TRIANGLE, LINE = 0,1,2,3,4
+    CIRCLE,ELLIPSE,RECT,TRIANGLE,LINE = 0,1,2,3,4
+
 
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
     MORPH_DIM = (3,3)
-    CONTOUR_THRESHOLD = 50          # if a contour does not contain more than 50 pixels,
+    CONTOUR_THRESHOLD = 20          # if a contour does not contain more than 50 pixels,
                                     # then we are not interested in the contour
     RED = (0,0,255)
     GREEN = (0,255,0)
     BLUE = (255,0,0)
     YELLOW = (0,255,255)
 
-    EPS = 0.0001                    # used to prevent the division by zero or taking lo
+    EPS = 0.0001                    # used to prevent division by zero
 
     NUM_CLASS = 3
 
-    NESTED_CONTOUR_DISTANCE = 15    #if a two contours are nested and their boundaries
-                                    # are within 10px then remove the innner conotur
-    PT_DISTANCE_THRESHOLD = 20      # this distance may change, threshold should depend on how big the contour is
+    NESTED_CONTOUR_DISTANCE = 15    # if a two contours are nested and their boundaries
+                                    # are within 15px then remove the innner conotur
 
-    ALIGNMENT_DRIFT_THRESHOLD = 0.1
+    PT_DISTANCE_THRESHOLD = 20      # point distance threshold, used in get_key_points
 
-    def get_data(self, dir):
-        i = 0
-        for root, subdirs, files in os.walk(dir):
-            for file in files:
-                if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
-                    path_to_img = os.path.join(root,file)
-                    print path_to_img
-                    img = cv2.imread(path_to_img)
-                    shapes = self.get_shapes_from_img(img, i)
-                    h,w,c = img.shape
-                    i += 1
-                    self.generate_svg(shapes, 'test'+ str(i) +'.svg', w, h)
 
-    # get shape features from img
-    def get_shapes_from_img(self, contours, img, num):
-        color, bw_img = preprocess_image(img)
-        shapes = self.get_shapes(contours, color, bw_img)
-        return shapes
+    # # this function is not called
+    # def get_data(self, dir):
+    #     i = 0
+    #     for root, subdirs, files in os.walk(dir):
+    #         for file in files:
+    #             if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
+    #                 path_to_img = os.path.join(root,file)
+    #                 print path_to_img
+    #                 img = cv2.imread(path_to_img)
+    #                 shapes = self.get_shapes_from_img(img, i)
+    #                 h,w,c = img.shape
+    #                 i += 1
+    #                 self.generate_svg(shapes, 'test'+ str(i) +'.svg', w, h)
+    #
+    # # get shape features from img, not called
+    # def get_shapes_from_img(self,  contours, img, num):
+    #     color, bw_img = preprocess_image(img)
+    #     shapes = self.get_shapes(contours, color, bw_img)
+    #     return shapes
 
     def get_shapes(self, contours, color_img, bw_img):
         #contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
-        contours =  filter_contours(contours)
+        w,h = bw_img.shape
+        contours = filter_contours(contours, w, h)
+        #draw_contours(contours, color_img)
+
         shapes = [] # a shape is a dictionary containing necessary information to draw the shape in SVG
         rectangles = [] # this will be used to detect tables
+        all_points = []
         for h, cnt in enumerate(contours):
-            points = self.get_key_points(cnt)
+            points = self.get_key_points(cnt, bw_img)
+            all_points += points
             shape = self.infer_shape_from_key_points(points, cnt)
-
-            # for pt in points:
-            #     cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
-            #     #txt = "%.2f" % (d/math.pi*180)
-            #     #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-            # show_image_in_window('c', color_img)
 
             if shape == self.CIRCLE:
                 (x,y),radius = cv2.minEnclosingCircle(cnt)
@@ -84,18 +84,17 @@ class ShapeDetector:
             elif shape == self.RECT:
                 # x,y,w,h = cv2.boundingRect(cnt)
                 # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
+
                 rect = cv2.minAreaRect(cnt)
                 box = cv2.cv.BoxPoints(rect)
 
                 # make the box horizontal if the box is horizontal
-
                 hor_box = is_horizontal_box(box)
                 box = hor_box if hor_box else box
                 box = np.int0(  (np.array(box)) )
 
                 # find if this box is a form/table
                 rectangles.append(box)
-
 
                 # shapes.append({
                 #     'shape':self.RECT,
@@ -128,13 +127,20 @@ class ShapeDetector:
                 'points':[tuple(pt) for pt in box]+[tuple(box[0])],
             })
 
+        for pt in all_points:
+            cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
+            #txt = "%.2f" % (d/math.pi*180)
+            #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
+        show_image_in_window('c', color_img)
+
         return shapes
 
-    def get_key_points(self, cnt):
+    def get_key_points(self, cnt, bw_img):
         previous_gradient = None
         diffs = []
-        # mask = np.zeros(bw_img.shape,np.uint8)
+        mask = np.zeros(bw_img.shape,np.uint8)
         key_points = []
+
         for i,pt in enumerate(cnt):
             prev = cnt[(i-1)%len(cnt)]     # use neighbor points to compute gradient
             nxt = cnt[(i+1)%len(cnt)]
@@ -146,12 +152,12 @@ class ShapeDetector:
             else:
                 # compute gradient angle difference
                 diff = math.fabs(previous_gradient-gradient)
-                # if diff is greater than 320 degree, the gradient change is too big, set it to zero
+                # if diff is greater than 300 degree, the gradient change is too big, set it to zero
                 diff = 0 if diff > 300.0/180.0*math.pi else diff
 
-                c = diff*255
+                c = diff*255 #intensity
                 diffs.append(diff)
-                # cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
+                cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
                 previous_gradient = gradient
 
         mmax = []
@@ -165,8 +171,9 @@ class ShapeDetector:
                 # print diffs[max(0, j-4) : min(j+5, len(diffs)-1)]
                 # compute the gradient diffs of the max points again and find the inflection point
                 mmax.append(j)
-                # cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
-        # self.show_image_in_window('m', mask)
+
+                cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
+
 
         # compute the gradient between the max
         for i, max_index in enumerate(mmax):
@@ -183,8 +190,7 @@ class ShapeDetector:
                 if any(dist(pt,current)<self.PT_DISTANCE_THRESHOLD for pt in key_points):
                     pass
                 else:
-                    key_points.append(current)
-
+                   key_points.append(current)
         return key_points
 
     def infer_shape_from_key_points(self, key_points, cnt):
@@ -240,7 +246,7 @@ class ShapeDetector:
         ver = [ (ver_bin[i] + ver_bin[i+1])/2 for i,x in enumerate(ver_hist) if x > 2 ]
 
         for y in ver:
-            lines.append(  [(y,hor[0]), (y,hor[-1])] )
+            lines.append( [(y,hor[0]), (y,hor[-1])] )
         for x in hor:
             lines.append( [(ver[0],x), (ver[-1],x)] )
 

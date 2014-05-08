@@ -24,24 +24,25 @@ class Project:
     def get_texts_and_shapes(self, path_to_img, index):
         img = cv2.imread(path_to_img)
         color, bw = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
-        # show_image_in_window('bw', bw)
+
         w,h = bw.shape
         contours,hierarchy = cv2.findContours(bw,cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
-        contours2, contour_tables, text_regions = self.text_detector.get_texts(contours, color, bw)
 
-        non_text_contours = []
-        for i, cnt in enumerate(contours2):
-            if not text_regions[contour_tables[i]].is_text_region():
-                non_text_contours.append(cnt)
+        #contours2, contour_tables, text_regions = self.text_detector.get_texts(contours, color, bw)
+        # non_text_contours = []
+        # for i, cnt in enumerate(contours2):
+        #     if not text_regions[contour_tables[i]].is_text_region():
+        #         non_text_contours.append(cnt)
 
         color, bw = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
-        shapes = self.shape_detector.get_shapes(non_text_contours, color, bw)
+        #draw_contours(non_text_contours , img)
+        shapes = self.shape_detector.get_shapes(contours , color, bw)
 
 
         texts = []
-        for region in text_regions:
-            if region.is_text_region():
-                texts.append(region)
+        # for region in text_regions:
+        #     if region.is_text_region():
+        #         texts.append(region)
 
         self.generate_svg(shapes, texts, "result" + str(index) + ".svg", h,w)
 
