@@ -4,6 +4,7 @@ import numpy as np
 import cv2
 from svg_generator import *
 from project_helpers import *
+from hough_array import *
 
 class ShapeDetector:
 
@@ -88,12 +89,12 @@ class ShapeDetector:
                 rect = cv2.minAreaRect(cnt)
                 box = cv2.cv.BoxPoints(rect)
 
-                # make the box horizontal if the box is horizontal
+                # make the box horizontal if the box is almost horizontal
                 hor_box = is_horizontal_box(box)
                 box = hor_box if hor_box else box
                 box = np.int0(  (np.array(box)) )
 
-                # find if this box is a form/table
+                # keep a global copy of all rectangles for later filtering
                 rectangles.append(box)
 
                 # shapes.append({
@@ -116,22 +117,38 @@ class ShapeDetector:
         # convert shape parameter to svg on image
         lines, boxes = self.find_table_box(rectangles, bw_img)
 
-        for line in lines:
-            shapes.append({
-                'shape':self.LINE,
-                'points':line
-            })
-        for box in boxes:
-            shapes.append({
-                'shape':self.RECT,
-                'points':[tuple(pt) for pt in box]+[tuple(box[0])],
-            })
+        # print lines
+        # for line in lines:
+        #     print line
+        #     shapes.append({
+        #         'shape':self.LINE,
+        #         'points':line
+        #     })
+        # for box in boxes:
+        #     shapes.append({
+        #         'shape':self.RECT,
+        #         'points':[tuple(pt) for pt in box]+[tuple(box[0])],
+        #     })
 
+        all_points = np.int0(all_points)
         for pt in all_points:
             cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
             #txt = "%.2f" % (d/math.pi*180)
             #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
         show_image_in_window('c', color_img)
+
+
+        # # use find_table to build a table from all points
+        box, lines = self.find_table(all_points, w, h)
+
+
+        # # remove all shapes that fall into the table box
+        for line in lines:
+            shapes.append({
+                'shape':self.LINE,
+                'points':line
+            })
+
 
         return shapes
 
@@ -205,14 +222,14 @@ class ShapeDetector:
         elif len(key_points) > 3:
             return self.RECT
 
-
+    # a primitive way for finding boxes
     def find_table_box(self, rectangles, img):
         h,w = img.shape
         table = {}
         leftover_boxes =[]
         lines = []
 
-        # this is to help find the locations of horizontal and verticle lines
+        # this is to help find the locations of horizontal and vertical lines
         hor = []
         ver = []
         for i,box in enumerate(rectangles):
@@ -251,6 +268,38 @@ class ShapeDetector:
             lines.append( [(ver[0],x), (ver[-1],x)] )
 
         return lines, leftover_boxes
+
+
+    def find_table(self, points, w, h):
+        # points: all key points for the table
+        # each point vote for a horizontal line and a verticle line
+        # in the end, need to find a way to collect the majority votes
+        x_data = HoughArray(30)    # vertical lines, with an ambiguity of 30px
+        y_data = HoughArray(30)    # horizontal lines, with an ambiguity of 30px
+
+        for pt in points:
+            x,y = pt[0]
+            x_data.add(x)
+            y_data.add(y)
+
+        # pick out the lines
+        ver_line_pos = x_data.get_high_votes()
+        hor_line_pos = y_data.get_high_votes()
+
+        # now need to create the actual lines from the positions
+        left =  min(ver_line_pos)
+        right = max(ver_line_pos)
+        top = min(hor_line_pos)
+        bottom = max(hor_line_pos)
+
+        lines = []
+        for x in ver_line_pos:
+            lines.append( [(x,top), (x,bottom)] )
+        for y in hor_line_pos:
+            lines.append( [(left,y), (right,y)] )
+
+        box = [left, right, top, bottom]
+        return box, lines
 
 
     def get_gradient_angle(self, prev, nxt):
