@@ -48,7 +48,7 @@ class SVGGenerator:
 
         for text_area in self.texts:
             paragraph = dwg.add(dwg.g(font_size= text_area.bottom - text_area.top))
-            paragraph.add(dwg.text('text', (text_area.left+self.SVG_BOUNDARY, text_area.top+self.SVG_BOUNDARY )))
+            paragraph.add(dwg.text('text', ((text_area.left+self.SVG_BOUNDARY)*px, (text_area.top+self.SVG_BOUNDARY)*px)))
 
         dwg.save()
 

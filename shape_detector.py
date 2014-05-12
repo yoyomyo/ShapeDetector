@@ -50,7 +50,7 @@ class ShapeDetector:
     #     shapes = self.get_shapes(contours, color, bw_img)
     #     return shapes
 
-    def get_shapes(self, contours, color_img, bw_img):
+    def get_shapes(self, contours, color_img, bw_img, text_regions):
         #contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
         w,h = bw_img.shape
         contours = filter_contours(contours, w, h)
@@ -60,62 +60,74 @@ class ShapeDetector:
         rectangles = [] # this will be used to detect tables
         all_points = []
         for h, cnt in enumerate(contours):
+            # if cnt fall into one of the text_regions, disregard this cnt
             points = self.get_key_points(cnt, bw_img)
-            all_points += points
-            shape = self.infer_shape_from_key_points(points, cnt)
 
-            if shape == self.CIRCLE:
-                (x,y),radius = cv2.minEnclosingCircle(cnt)
-                center = (int(x),int(y))
-                radius = int(radius)
-                # cv2.circle(color_img,center,radius,self.RED,2)
-                shapes.append({
-                    'shape':self.CIRCLE,
-                    'center':(int(x),int(y)),
-                    'radius':int(radius)
-                })
-            elif shape == self.ELLIPSE:
-                ellipse = cv2.fitEllipse(cnt)
-                # cv2.ellipse(color_img,ellipse,self.GREEN,2)
-                shapes.append({
-                    'shape':self.ELLIPSE,
-                    'ellipse': ellipse
-                })
+            count = 0
+            for pt in points:
+                for region in text_regions:
+                    if region.contains(pt[0]):
+                        count += 1
 
-            elif shape == self.RECT:
-                # x,y,w,h = cv2.boundingRect(cnt)
-                # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
+            if count > 0.5 * len(points):
+                continue # the points are in the text region
+            else:
+                shape = self.infer_shape_from_key_points(points, cnt)
 
-                rect = cv2.minAreaRect(cnt)
-                box = cv2.cv.BoxPoints(rect)
+                if shape == self.CIRCLE:
+                    (x,y),radius = cv2.minEnclosingCircle(cnt)
+                    center = (int(x),int(y))
+                    radius = int(radius)
+                    # cv2.circle(color_img,center,radius,self.RED,2)
+                    shapes.append({
+                        'shape':self.CIRCLE,
+                        'center':(int(x),int(y)),
+                        'radius':int(radius),
+                        'points':points
+                    })
+                elif shape == self.ELLIPSE:
+                    ellipse = cv2.fitEllipse(cnt)
+                    # cv2.ellipse(color_img,ellipse,self.GREEN,2)
+                    shapes.append({
+                        'shape':self.ELLIPSE,
+                        'ellipse': ellipse,
+                        'points':points
+                    })
 
-                # make the box horizontal if the box is almost horizontal
-                hor_box = is_horizontal_box(box)
-                box = hor_box if hor_box else box
-                box = np.int0(  (np.array(box)) )
+                elif shape == self.RECT:
+                    # x,y,w,h = cv2.boundingRect(cnt)
+                    # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
+                    all_points += points
+                    rect = cv2.minAreaRect(cnt)
+                    box = cv2.cv.BoxPoints(rect)
 
-                # keep a global copy of all rectangles for later filtering
-                rectangles.append(box)
+                    # make the box horizontal if the box is almost horizontal
+                    hor_box = is_horizontal_box(box)
+                    box = hor_box if hor_box else box
+                    box = np.int0(  (np.array(box)) )
 
-                # shapes.append({
-                #     'shape':self.RECT,
-                #     'points':[tuple(pt) for pt in box]+[tuple(box[0])],
-                # })
-                #cv2.drawContours(color_img,[box],0,self.YELLOW,2)
+                    # keep a global copy of all rectangles for later filtering
+                    rectangles.append(box)
 
-            elif shape == self.TRIANGLE:
-                # pdb.set_trace()
-                points = np.int0(points)
-                # cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
-                # cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
-                # cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
-                shapes.append({
-                    'shape':self.TRIANGLE,
-                    'points':[tuple(pt[0]) for pt in points] + [tuple(points[0][0])]
-                })
+                    # shapes.append({
+                    #     'shape':self.RECT,
+                    #     'points':[tuple(pt) for pt in box]+[tuple(box[0])],
+                    # })
+                    #cv2.drawContours(color_img,[box],0,self.YELLOW,2)
+
+                elif shape == self.TRIANGLE:
+                    # pdb.set_trace()
+                    points = np.int0(points)
+                    # cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
+                    # cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
+                    # cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
+                    shapes.append({
+                        'shape':self.TRIANGLE,
+                        'points':[tuple(pt[0]) for pt in points] + [tuple(points[0][0])]
+                    })
 
         # convert shape parameter to svg on image
-        lines, boxes = self.find_table_box(rectangles, bw_img)
+        #lines, boxes = self.find_table_box(rectangles, bw_img)
 
         # print lines
         # for line in lines:
@@ -131,26 +143,59 @@ class ShapeDetector:
         #     })
 
         all_points = np.int0(all_points)
-        for pt in all_points:
-            cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
-            #txt = "%.2f" % (d/math.pi*180)
-            #cv2.putText(color_img, txt, tuple(current[0]+[4,4 ]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-        show_image_in_window('c', color_img)
+        # for pt in all_points:
+        #     cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
+        #     #txt = "%.2f" % (d/math.pi*180)
+        #     #cv2.putText(color_img, txt, tuple(current[0]+[4,4]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
+        # show_image_in_window('c', color_img)
+        #
+        # for region in text_regions:
+        #     if region.is_text_region():
+        #         cv2.rectangle(color_img,(region.left,region.top),(region.right,region.bottom),GREEN,1)
 
 
-        # # use find_table to build a table from all points
-        box, lines = self.find_table(all_points, w, h)
+        if self.find_table_exist(rectangles, bw_img):
+            # if there is a table, use find_table to build a table from all points
+            box, lines = self.find_table(all_points, w, h)
 
+            for line in lines:
+                shapes.append({
+                    'shape':self.LINE,
+                    'points':line
+                })
 
-        # # remove all shapes that fall into the table box
-        for line in lines:
-            shapes.append({
-                'shape':self.LINE,
-                'points':line
-            })
+            include_shapes = []
+            for shape in shapes:
+                points = shape['points']
+                if not shape['shape'] == self.LINE and self.contains(box, points):
+                    pass
+                else:
+                    include_shapes.append(shape)
+            shapes = include_shapes
+
+        else:
+            for box in rectangles:
+                shapes.append({
+                    'shape':self.RECT,
+                    'points':[tuple(pt) for pt in box]+[tuple(box[0])],
+                })
 
 
         return shapes
+
+    # return true if a box contains a shape
+    def contains(self, box, points):
+        left, right, top, bottom = box
+        count = 0
+        for pt in points:
+            if len(pt) == 2:
+                x,y = pt
+            else:
+                x,y = pt[0]
+            if x >= left and x <= right and y >= top and y <= bottom:
+                count += 1
+        return count >= 1
+
 
     def get_key_points(self, cnt, bw_img):
         previous_gradient = None
@@ -222,12 +267,10 @@ class ShapeDetector:
         elif len(key_points) > 3:
             return self.RECT
 
-    # a primitive way for finding boxes
-    def find_table_box(self, rectangles, img):
+    #a primitive way for finding boxes
+    def find_table_exist(self, rectangles, img):
         h,w = img.shape
         table = {}
-        leftover_boxes =[]
-        lines = []
 
         # this is to help find the locations of horizontal and vertical lines
         hor = []
@@ -248,9 +291,6 @@ class ShapeDetector:
                 for pt in box:
                     ver.append(pt[0])
                     hor.append(pt[1])
-            else:
-                leftover_boxes.append(box)
-
 
         hor = np.array(hor)
         ver = np.array(ver)
@@ -262,18 +302,16 @@ class ShapeDetector:
         hor = [ (hor_bin[i] + hor_bin[i+1])/2 for i,x in enumerate(hor_hist) if x > 2 ]
         ver = [ (ver_bin[i] + ver_bin[i+1])/2 for i,x in enumerate(ver_hist) if x > 2 ]
 
-        for y in ver:
-            lines.append( [(y,hor[0]), (y,hor[-1])] )
-        for x in hor:
-            lines.append( [(ver[0],x), (ver[-1],x)] )
-
-        return lines, leftover_boxes
+        return hor and ver
 
 
     def find_table(self, points, w, h):
+
         # points: all key points for the table
         # each point vote for a horizontal line and a verticle line
         # in the end, need to find a way to collect the majority votes
+        # if no table is found, return empty line
+
         x_data = HoughArray(30)    # vertical lines, with an ambiguity of 30px
         y_data = HoughArray(30)    # horizontal lines, with an ambiguity of 30px
 
@@ -282,9 +320,13 @@ class ShapeDetector:
             x_data.add(x)
             y_data.add(y)
 
+        lines = []
         # pick out the lines
         ver_line_pos = x_data.get_high_votes()
         hor_line_pos = y_data.get_high_votes()
+
+        if not ver_line_pos or not hor_line_pos:
+            return lines
 
         # now need to create the actual lines from the positions
         left =  min(ver_line_pos)
@@ -292,7 +334,6 @@ class ShapeDetector:
         top = min(hor_line_pos)
         bottom = max(hor_line_pos)
 
-        lines = []
         for x in ver_line_pos:
             lines.append( [(x,top), (x,bottom)] )
         for y in hor_line_pos:

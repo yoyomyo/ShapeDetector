@@ -32,10 +32,6 @@ ALIGNMENT_DRIFT_THRESHOLD = 0.1
 TABLE_BOX_DISTANCE = 10
 
 
-
-
-
-
 # contour related
 
 def filter_contours(contours, w, h):
@@ -177,7 +173,6 @@ def overlap_boxes(box1, box2):
     d = abs(t1-b2) < TABLE_BOX_DISTANCE and abs(l1-l2) < TABLE_BOX_DISTANCE
 
     return a or b or c or d
-
 
 # global helper functions
 def midpoint(p1, p2):

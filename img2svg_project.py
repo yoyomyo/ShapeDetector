@@ -28,24 +28,13 @@ class Project:
         w,h = bw.shape
         contours,hierarchy = cv2.findContours(bw,cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
 
-        #contours2, contour_tables, text_regions = self.text_detector.get_texts(contours, color, bw)
-        # non_text_contours = []
-        # for i, cnt in enumerate(contours2):
-        #     if not text_regions[contour_tables[i]].is_text_region():
-        #         non_text_contours.append(cnt)
+        text_regions = self.text_detector.get_texts(contours, color, bw)
 
         color, bw = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
-        #draw_contours(non_text_contours , img)
-        shapes = self.shape_detector.get_shapes(contours , color, bw)
+        shapes = self.shape_detector.get_shapes(contours , color, bw, text_regions)
 
 
-        texts = []
-        # for region in text_regions:
-        #     if region.is_text_region():
-        #         texts.append(region)
-
-        self.generate_svg(shapes, texts, "result" + str(index) + ".svg", h,w)
-
+        self.generate_svg(shapes, text_regions, "result" + str(index) + ".svg", h,w)
 
     # given a list of shapes, draw the shape in svg
     # and save the svg to a file in the end
@@ -55,7 +44,7 @@ class Project:
 
 project = Project()
 i = 1
-for root, subdirs, files in os.walk('test'):
+for root, subdirs, files in os.walk('test2'):
     for file in files:
         if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
             path_to_img = os.path.join(root,file)

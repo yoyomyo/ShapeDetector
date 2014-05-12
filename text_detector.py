@@ -8,7 +8,7 @@ from bisect import *
 
 import pdb
 
-TEXT_AREA_THRESHOLD_LOWER = 10
+
 TEXT_HORIZONTAL_DISTANCE_THRESHOLD = 50
 TEXT_VERTICAL_DISTANCE_THRESHOLD = 30
 TEXT_PERCENT_THRESHOLD = 0.5
@@ -17,6 +17,7 @@ TEXT_PERCENT_THRESHOLD = 0.5
 # to distinguish text regions
 # and shape regions in a sketch
 # output a list of text regions
+
 class TextDetector:
 
     def __init__(self):
@@ -30,7 +31,10 @@ class TextDetector:
         if os.path.isfile("tag2.data"):os.remove("tag2.data")
 
         if os.path.isfile("feat3.data"): os.remove("feat3.data")
-        if os.path.isfile("tag3.data"):os.remove("tag3.data")
+        if os.path.isfile("tag3.data"): os.remove("tag3.data")
+
+        if os.path.isfile("feat4.data"): os.remove("feat4.data")
+        if os.path.isfile("tag4.data"): os.remove("tag4.data")
 
         for c in [0,1]:
             subdir = os.path.join(dir,str(c))
@@ -40,11 +44,16 @@ class TextDetector:
                         path_to_img = os.path.join(root,file)
                         img = cv2.imread(path_to_img)
                         color, bw_img = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
+
+                        width, height = bw_img.shape
+                        self.TEXT_AREA_THRESHOLD_UPPER = width*height*0.005
+                        self.TEXT_AREA_THRESHOLD_LOWER = 30
                         self.get_training_samples(color, bw_img, c)
 
         self.svm1 = self.get_classifier('feat1.data', 'tag1.data')
         self.svm2 = self.get_classifier('feat2.data', 'tag2.data')
         self.svm3 = self.get_classifier('feat3.data', 'tag3.data')
+        self.svm4 = self.get_classifier('feat4.data', 'tag4.data')
 
     def test(self, dir):
         i = 1
@@ -54,7 +63,8 @@ class TextDetector:
                     path_to_img = os.path.join(root,file)
                     img = cv2.imread(path_to_img)
                     color, bw_img = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
-                    regions = self.get_texts(color, bw_img)
+                    contours,hierarchy = cv2.findContours(bw_img,cv2.RETR_CCOMP,cv2.CHAIN_APPROX_SIMPLE)
+                    regions = self.get_texts(contours,color, bw_img)
                     for region in regions:
                         if region.is_text_region():
                             cv2.rectangle(color,(region.left,region.top),(region.right,region.bottom),GREEN,1)
@@ -66,9 +76,12 @@ class TextDetector:
                     i += 1
 
     def get_texts(self, contours, color_img, bw_img):
+        # width, height = bw_img.shape
+        # self.TEXT_AREA_THRESHOLD_UPPER = width*height*0.005
         contours2, is_text_flags = self.get_testing_result(contours, color_img, bw_img)
-        contour_tables, text_regions = self.get_text_regions(contours2, is_text_flags)
-        return contours2,  contour_tables, text_regions
+        # merge adjacent text contours
+        text_regions = self.get_text_regions(contours2, is_text_flags)
+        return text_regions
 
     def get_testing_result(self, contours, color_img, bw_img):
         width, height = bw_img.shape
@@ -83,7 +96,7 @@ class TextDetector:
 
         for cnt in contours:
             area = cv2.contourArea(cnt)
-            if area > TEXT_AREA_THRESHOLD_LOWER:
+            if area > self.TEXT_AREA_THRESHOLD_LOWER and area < self.TEXT_AREA_THRESHOLD_UPPER:
                 x,y,w,h = cv2.boundingRect(cnt)
 
                 #sort contours by their left bound
@@ -93,15 +106,19 @@ class TextDetector:
 
                 feature1, feature2, feature3 = self.get_features(cnt, width, height)
 
+                crossings = self.get_horizontal_crossing(cnt, bw_img)
                 feature1 = np.array([feature1], np.float32)
                 feature2 = np.array([feature2], np.float32)
                 feature3 = np.array([feature3], np.float32)
+                feature4 = np.array(crossings, np.float32)
 
                 is_shape1 = self.svm1.predict(feature1)
                 is_shape2 = self.svm2.predict(feature2)
                 is_shape3 = self.svm3.predict(feature3)
+                is_shape4 = self.svm4.predict(feature4)
 
-                is_text = not (is_shape1 and is_shape2 and is_shape3)
+                #is_text = not (is_shape1 and is_shape2 and is_shape3)
+                is_text = not (is_shape3 and is_shape4 and is_shape1 and is_shape2)
                 is_text_flags.append(is_text)
 
         return filtered_contours, is_text_flags
@@ -111,12 +128,16 @@ class TextDetector:
         features1 = np.empty((0,1))
         features2 = np.empty((0,1))
         features3 = np.empty((0,1))
+        features4 = np.empty((0,3))
+
         tags = []
+        bw = bw_img.copy()
         contours, hierarchy = cv2.findContours(bw_img,cv2.RETR_TREE,cv2.CHAIN_APPROX_SIMPLE)
 
         for cnt in contours:
+
             area = cv2.contourArea(cnt)
-            if area > 10:
+            if area > self.TEXT_AREA_THRESHOLD_LOWER and area < self.TEXT_AREA_THRESHOLD_UPPER:
                 x,y,w,h = cv2.boundingRect(cnt)
                 cv2.rectangle(color_img,(x,y),(x+w,y+h),RED,2)
 
@@ -124,14 +145,18 @@ class TextDetector:
                 # cv2.drawContours(color_img,[approx],-1,(0,255,0),1)
                 feature1, feature2, feature3 = self.get_features(cnt, width, height)
 
+                crossings = self.get_horizontal_crossing(cnt, bw)
+
                 tags.append(c)
                 sample1 = np.array([[feature1]])
                 sample2 = np.array([[feature2]])
                 sample3 = np.array([[feature3]])
+                sample4 = np.array([crossings])
 
                 features1 = np.append(features1,sample1,0)
                 features2 = np.append(features2,sample2,0)
                 features3 = np.append(features3,sample3,0)
+                features4 = np.append(features4,sample4,0)
 
         tags = np.array(tags,np.float32)
         tags = tags.reshape((tags.size,1))
@@ -139,19 +164,22 @@ class TextDetector:
         np.savetxt('tmp_feat1.data',features1)
         np.savetxt('tmp_feat2.data',features2)
         np.savetxt('tmp_feat3.data',features3)
+        np.savetxt('tmp_feat4.data',features4)
         np.savetxt('tmp_tag.data',tags)
 
         # append temp data to training data
         append_result_to_file("feat1.data", "tmp_feat1.data")
         append_result_to_file("feat2.data", "tmp_feat2.data")
         append_result_to_file("feat3.data", "tmp_feat3.data")
+        append_result_to_file("feat4.data", "tmp_feat4.data")
 
         append_result_to_file("tag1.data", "tmp_tag.data")
         append_result_to_file("tag2.data", "tmp_tag.data")
         append_result_to_file("tag3.data", "tmp_tag.data")
+        append_result_to_file("tag4.data", "tmp_tag.data")
 
         #show_image_in_window('contour', color_img)
-        cv2.destroyAllWindows()
+        #cv2.destroyAllWindows()
 
     # the features must has something to do with the context too
     def get_features(self, cnt, width, height):
@@ -184,23 +212,49 @@ class TextDetector:
 
     def get_text_regions(self, contours, is_text_flags):
         regions = []
-        contour_tables = {}
         for i, cnt in enumerate(contours):
             is_text = is_text_flags[i]
-            # merge this cnt into the list if possible
+
+            # merge this cnt into the region list if possible
             merged = False
             for j, region in enumerate(regions):
                 if region.merge(cnt, is_text):
                     merged = True
-                    contour_tables[i] = j
                     break
 
             if not merged:
                 image_region = ImageRegion(cnt, is_text)
-                contour_tables[i] = len(regions)
                 regions.append(image_region)
 
-        return contour_tables, regions
+        return regions
+
+    def get_horizontal_crossing(self, cnt, bw_img):
+        img_h, img_w = bw_img.shape
+        x,y,w,h = cv2.boundingRect(cnt)
+
+        # find the horizontal crossings at three positions
+        hor_pos = [int(y+0.16*h), int(y+0.49*h), int(y+0.82*h)]
+
+        # for pos in hor_pos:
+        #     cv2.line(color_img, (x, pos), (x+w, pos), RED, 1)
+        #
+        # cv2.rectangle(color_img,(x,y),(x+w, y+h),RED,1)
+
+
+        # each contour should generate three crossings
+        # look at the pixels on each line
+        crossings = [0]*3
+        for j, pos in enumerate(hor_pos):
+            #print x,x+w,pos, img_w, img_h
+            for i in range(x, x+w):
+                if i > 0 and i < img_w:
+                    left = bw_img[pos][i-1]
+                    right = bw_img[pos][i]
+                    if not left == right:
+                        crossings[j] += 1
+        return crossings
+
+
 
 
 # an ImageRegion is either text or shape
@@ -233,6 +287,11 @@ class ImageRegion:
             self.text_cnt_count += 1 if is_text else 0
             return True
         return False
+
+    # return true if a point is within the contour
+    def contains(self, pt):
+        x,y = pt
+        return x >= self.left and x <=self.right and y >= self.top and y <= self.bottom
 
     # tell if a contour should be merge with the region
     def isAdjacent(self, cnt):
