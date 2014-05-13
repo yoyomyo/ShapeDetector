@@ -95,7 +95,7 @@ class ShapeDetector:
                     })
 
                 elif shape == self.RECT:
-                    # x,y,w,h = cv2.boundingRect(cnt)
+                    x,y,w,h = cv2.boundingRect(cnt)
                     # cv2.rectangle(color_img, (x,y), (x+w,y+h), self.YELLOW, 2)
                     all_points += points
                     rect = cv2.minAreaRect(cnt)
@@ -107,7 +107,7 @@ class ShapeDetector:
                     box = np.int0(  (np.array(box)) )
 
                     # keep a global copy of all rectangles for later filtering
-                    rectangles.append(box)
+                    rectangles.append( (box, (x,x+w,y,y+h)) )
 
                     # shapes.append({
                     #     'shape':self.RECT,
@@ -154,6 +154,8 @@ class ShapeDetector:
         #         cv2.rectangle(color_img,(region.left,region.top),(region.right,region.bottom),GREEN,1)
 
 
+
+        # the problem now is that the big table rectangle
         if self.find_table_exist(rectangles, bw_img):
             # if there is a table, use find_table to build a table from all points
             box, lines = self.find_table(all_points, w, h)
@@ -164,6 +166,7 @@ class ShapeDetector:
                     'points':line
                 })
 
+            # filter out the shapes that overlaps with the table
             include_shapes = []
             for shape in shapes:
                 points = shape['points']
@@ -173,12 +176,19 @@ class ShapeDetector:
                     include_shapes.append(shape)
             shapes = include_shapes
 
+            # then add the non-table rectangles to the image
+            for rect, bound in rectangles:
+                if not self.contains(box, rect) and not self.contains(bound, [(box[0],box[2]), (box[1],box[2]),(box[0],box[3]), (box[1],box[3])]):
+                    shapes.append({
+                        'shape':self.RECT,
+                        'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
+                    })
         else:
-            for box in rectangles:
-                shapes.append({
-                    'shape':self.RECT,
-                    'points':[tuple(pt) for pt in box]+[tuple(box[0])],
-                })
+            for rect, bound in rectangles:
+                    shapes.append({
+                        'shape':self.RECT,
+                        'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
+                    })
 
 
         return shapes
@@ -275,18 +285,20 @@ class ShapeDetector:
         # this is to help find the locations of horizontal and vertical lines
         hor = []
         ver = []
-        for i,box in enumerate(rectangles):
+        for i,_ in enumerate(rectangles):
             table[i] = []
 
-        for i,box1 in enumerate(rectangles):
-            for j,box2 in enumerate(rectangles):
+        for i,val1 in enumerate(rectangles):
+            box1, _ = val1
+            for j,val2 in enumerate(rectangles):
+                box2, _ = val2
                 if j<=i: continue
                 if overlap_boxes(box1, box2):
                     table[i].append(box2)
                     table[j].append(box1)
 
         for k in table:
-            box = rectangles[k]
+            box = rectangles[k][0]
             if len(table[k])>=2:
                 for pt in box:
                     ver.append(pt[0])

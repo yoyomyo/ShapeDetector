@@ -44,7 +44,7 @@ class Project:
 
 project = Project()
 i = 1
-for root, subdirs, files in os.walk('test2'):
+for root, subdirs, files in os.walk('test'):
     for file in files:
         if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
             path_to_img = os.path.join(root,file)
