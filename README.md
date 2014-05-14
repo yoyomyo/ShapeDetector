@@ -12,8 +12,7 @@ To run:
 
 `python img2svg.py dir_of_input_images`
 
-The code comes with some example input images:
-
+The code comes with some input images in the example_input directory:
 `python img2svg.py example_input`
 
 To turn on intermediate results: 
