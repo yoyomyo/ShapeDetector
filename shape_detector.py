@@ -119,7 +119,10 @@ class ShapeDetector:
                 elif shape == self.TRIANGLE:
                     # pdb.set_trace()
                     points = np.int0(points)
-                    cv2.drawContours(color_img,[points],0,self.BLUE ,2)
+                    try:
+                        cv2.drawContours(color_img,[points],0,self.BLUE ,2)
+                    except cv2.error:
+                        print "unable to draw triangle"
                     shapes.append({
                         'shape':self.TRIANGLE,
                         'points':[tuple(pt[0]) for pt in points] + [tuple(points[0][0])]
@@ -171,14 +174,20 @@ class ShapeDetector:
                         'shape':self.RECT,
                         'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
                     })
-                    cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+                    try:
+                        cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+                    except cv2.error:
+                        print "unable to draw rectangle"
         else:
             for rect, bound in rectangles:
                 shapes.append({
                     'shape':self.RECT,
                     'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
                 })
-                cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+                try:
+                    cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+                except cv2.error:
+                    print "unable to draw rectangle"
         return shapes, color_img
 
     # return true if a box contains a shape
