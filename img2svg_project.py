@@ -2,11 +2,12 @@ __author__ = 'yoyomyo'
 
 import numpy as np
 import cv2
+import sys
 from shape_detector import *
 from text_detector import *
 from svg_generator import *
 
-class Project:
+class img2svg:
 
     MAX_IMG_DIM = 1000              # if width or height greater than 1000 pixels, processing image would be slow
     MORPH_DIM = (3,3)
@@ -21,7 +22,7 @@ class Project:
         self.shape_detector = ShapeDetector()
         self.svg_generator = None
 
-    def get_texts_and_shapes(self, path_to_img, index):
+    def get_texts_and_shapes(self, path_to_img, index, write_intermediate_result):
         img = cv2.imread(path_to_img)
         color, bw = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
 
@@ -30,9 +31,14 @@ class Project:
 
         text_regions = self.text_detector.get_texts(contours, color, bw)
 
-        color, bw = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
-        shapes = self.shape_detector.get_shapes(contours , color, bw, text_regions)
+        for region in text_regions:
+            cv2.rectangle(color,(region.left,region.top),(region.right, region.bottom),GREEN,1)
 
+        _, bw = preprocess_image(img, MAX_IMG_DIM, MORPH_DIM)
+        shapes, color = self.shape_detector.get_shapes(contours, color, bw, text_regions)
+
+        if write_intermediate_result:
+            cv2.imwrite("result" + str(index) + ".jpg", color)
 
         self.generate_svg(shapes, text_regions, "result" + str(index) + ".svg", h,w)
 
@@ -42,12 +48,23 @@ class Project:
         gen = SVGGenerator(shapes, texts)
         gen.generate_svg(filename, width, height)
 
-project = Project()
-i = 1
-for root, subdirs, files in os.walk('test'):
-    for file in files:
-        if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
-            path_to_img = os.path.join(root,file)
-            print path_to_img
-            project.get_texts_and_shapes(path_to_img, i)
-            i += 1
+    def run(self, dir_name, write_intermediate_result=False):
+        if dir_name:
+            i = 1
+            for root, subdirs, files in os.walk(dir_name):
+                for file in files:
+                    if os.path.splitext(file)[1].lower() in ('.jpg', '.jpeg', '.png'):
+                        path_to_img = os.path.join(root,file)
+                        print path_to_img
+                        project.get_texts_and_shapes(path_to_img, i, write_intermediate_result)
+                        i += 1
+
+
+if __name__ == '__main__':
+    project = img2svg()
+    if len(sys.argv) == 2:
+        project.run(sys.argv[1], bool(sys.argv[2]))
+    else:
+        project.run(sys.argv[1])
+
+

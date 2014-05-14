@@ -155,6 +155,7 @@ def is_horizontal_box(box):
 
     else:
         return []
+    return []
 
 def overlap_boxes(box1, box2):
     l1 = box1[0][0]

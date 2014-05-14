@@ -71,7 +71,7 @@ class TextDetector:
                         else:
                             cv2.rectangle(color,(region.left,region.top),(region.right,region.bottom),BLUE,1)
 
-                    show_image_in_window('color', color)
+
                     cv2.imwrite("result" + str(i) + ".jpg", color)
                     i += 1
 
@@ -81,6 +81,9 @@ class TextDetector:
         contours2, is_text_flags = self.get_testing_result(contours, color_img, bw_img)
         # merge adjacent text contours
         text_regions = self.get_text_regions(contours2, is_text_flags)
+        # for region in text_regions:
+        #     cv2.rectangle(color_img,(region.left,region.top),(region.right, region.bottom),GREEN,1)
+        # show_image_in_window('c', color_img)
         return text_regions
 
     def get_testing_result(self, contours, color_img, bw_img):
@@ -106,7 +109,7 @@ class TextDetector:
 
                 feature1, feature2, feature3 = self.get_features(cnt, width, height)
 
-                crossings = self.get_horizontal_crossing(cnt, bw_img)
+                crossings = self.get_horizontal_crossing(cnt, bw_img, color_img)
                 feature1 = np.array([feature1], np.float32)
                 feature2 = np.array([feature2], np.float32)
                 feature3 = np.array([feature3], np.float32)
@@ -145,7 +148,7 @@ class TextDetector:
                 # cv2.drawContours(color_img,[approx],-1,(0,255,0),1)
                 feature1, feature2, feature3 = self.get_features(cnt, width, height)
 
-                crossings = self.get_horizontal_crossing(cnt, bw)
+                crossings = self.get_horizontal_crossing(cnt, bw, color_img)
 
                 tags.append(c)
                 sample1 = np.array([[feature1]])
@@ -193,14 +196,14 @@ class TextDetector:
         approx = cv2.approxPolyDP(cnt,0.01*cv2.arcLength(cnt,True),True)
 
         area = cv2.contourArea(cnt)
-        # perimeter = cv2.arcLength(cnt,True)
+        perimeter = cv2.arcLength(cnt,True)
         #
         # aspect = float(w)/h
-        # compactness = float(w+h) / perimeter
+        compactness = float(w+h) / perimeter
         solidity = get_solidity(cnt)
-        convex_hull_ratio = float(area)/w*h
+        # convex_hull_ratio = float(area)/w*h
 
-        return solidity, convex_hull_ratio, area
+        return compactness, solidity, area
 
     def get_classifier(self, feat, tag):
         samples = np.loadtxt(feat,np.float32)
@@ -228,7 +231,7 @@ class TextDetector:
 
         return regions
 
-    def get_horizontal_crossing(self, cnt, bw_img):
+    def get_horizontal_crossing(self, cnt, bw_img, color_img):
         img_h, img_w = bw_img.shape
         x,y,w,h = cv2.boundingRect(cnt)
 
@@ -239,7 +242,7 @@ class TextDetector:
         #     cv2.line(color_img, (x, pos), (x+w, pos), RED, 1)
         #
         # cv2.rectangle(color_img,(x,y),(x+w, y+h),RED,1)
-
+        # show_image_in_window('color', color_img)
 
         # each contour should generate three crossings
         # look at the pixels on each line
@@ -312,4 +315,4 @@ class ImageRegion:
 
 # rd = TextDetector()
 # rd.train('train/')
-# rd.test('test')
+# rd.test('test2')

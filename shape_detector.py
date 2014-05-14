@@ -19,10 +19,9 @@ class ShapeDetector:
     GREEN = (0,255,0)
     BLUE = (255,0,0)
     YELLOW = (0,255,255)
+    BG = (255,255,0)
 
     EPS = 0.0001                    # used to prevent division by zero
-
-    NUM_CLASS = 3
 
     NESTED_CONTOUR_DISTANCE = 15    # if a two contours are nested and their boundaries
                                     # are within 15px then remove the innner conotur
@@ -55,13 +54,15 @@ class ShapeDetector:
         w,h = bw_img.shape
         contours = filter_contours(contours, w, h)
         #draw_contours(contours, color_img)
+        mask1 = np.zeros(bw_img.shape,np.uint8) #interest points
+        mask2 = np.zeros(bw_img.shape,np.uint8) #inflection points
 
         shapes = [] # a shape is a dictionary containing necessary information to draw the shape in SVG
         rectangles = [] # this will be used to detect tables
         all_points = []
         for h, cnt in enumerate(contours):
             # if cnt fall into one of the text_regions, disregard this cnt
-            points = self.get_key_points(cnt, bw_img)
+            points = self.get_key_points(cnt, bw_img, mask1, mask2)
 
             count = 0
             for pt in points:
@@ -78,7 +79,7 @@ class ShapeDetector:
                     (x,y),radius = cv2.minEnclosingCircle(cnt)
                     center = (int(x),int(y))
                     radius = int(radius)
-                    # cv2.circle(color_img,center,radius,self.RED,2)
+                    cv2.circle(color_img,center,radius,self.RED,2)
                     shapes.append({
                         'shape':self.CIRCLE,
                         'center':(int(x),int(y)),
@@ -87,7 +88,7 @@ class ShapeDetector:
                     })
                 elif shape == self.ELLIPSE:
                     ellipse = cv2.fitEllipse(cnt)
-                    # cv2.ellipse(color_img,ellipse,self.GREEN,2)
+                    cv2.ellipse(color_img,ellipse,self.GREEN,2)
                     shapes.append({
                         'shape':self.ELLIPSE,
                         'ellipse': ellipse,
@@ -113,41 +114,25 @@ class ShapeDetector:
                     #     'shape':self.RECT,
                     #     'points':[tuple(pt) for pt in box]+[tuple(box[0])],
                     # })
-                    #cv2.drawContours(color_img,[box],0,self.YELLOW,2)
+
 
                 elif shape == self.TRIANGLE:
                     # pdb.set_trace()
                     points = np.int0(points)
-                    # cv2.line(color_img, tuple(points[0][0]), tuple(points[1][0]), self.BLUE, 2)
-                    # cv2.line(color_img, tuple(points[1][0]), tuple(points[2][0]), self.BLUE, 2)
-                    # cv2.line(color_img, tuple(points[2][0]), tuple(points[0][0]), self.BLUE, 2)
+                    cv2.drawContours(color_img,[points],0,self.BLUE ,2)
                     shapes.append({
                         'shape':self.TRIANGLE,
                         'points':[tuple(pt[0]) for pt in points] + [tuple(points[0][0])]
                     })
-
-        # convert shape parameter to svg on image
-        #lines, boxes = self.find_table_box(rectangles, bw_img)
-
-        # print lines
-        # for line in lines:
-        #     print line
-        #     shapes.append({
-        #         'shape':self.LINE,
-        #         'points':line
-        #     })
-        # for box in boxes:
-        #     shapes.append({
-        #         'shape':self.RECT,
-        #         'points':[tuple(pt) for pt in box]+[tuple(box[0])],
-        #     })
+        # show_image_in_window('interest points', mask1)
+        # show_image_in_window('inflection points', mask2)
 
         all_points = np.int0(all_points)
         # for pt in all_points:
         #     cv2.circle(color_img, tuple(pt[0]),3, self.RED, thickness=2, lineType=8, shift=0)
         #     #txt = "%.2f" % (d/math.pi*180)
         #     #cv2.putText(color_img, txt, tuple(current[0]+[4,4]), cv2.FONT_HERSHEY_SCRIPT_SIMPLEX, 0.4, self.RED, 1, 8)
-        # show_image_in_window('c', color_img)
+
         #
         # for region in text_regions:
         #     if region.is_text_region():
@@ -163,8 +148,9 @@ class ShapeDetector:
             for line in lines:
                 shapes.append({
                     'shape':self.LINE,
-                    'points':line
+                    'points': line
                 })
+                cv2.line(color_img, line[0], line[1], self.BG ,2)
 
             # filter out the shapes that overlaps with the table
             include_shapes = []
@@ -178,20 +164,22 @@ class ShapeDetector:
 
             # then add the non-table rectangles to the image
             for rect, bound in rectangles:
-                if not self.contains(box, rect) and not self.contains(bound, [(box[0],box[2]), (box[1],box[2]),(box[0],box[3]), (box[1],box[3])]):
+                if not self.contains(box, rect) \
+                        and not self.contains(bound, \
+                                              [(box[0],box[2]),(box[1],box[2]),(box[0],box[3]), (box[1],box[3])]):
                     shapes.append({
                         'shape':self.RECT,
                         'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
                     })
+                    cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
         else:
             for rect, bound in rectangles:
-                    shapes.append({
-                        'shape':self.RECT,
-                        'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
-                    })
-
-
-        return shapes
+                shapes.append({
+                    'shape':self.RECT,
+                    'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
+                })
+                cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+        return shapes, color_img
 
     # return true if a box contains a shape
     def contains(self, box, points):
@@ -207,7 +195,7 @@ class ShapeDetector:
         return count >= 1
 
 
-    def get_key_points(self, cnt, bw_img):
+    def get_key_points(self, cnt, bw_img, black_img1, black_img2):
         previous_gradient = None
         diffs = []
         mask = np.zeros(bw_img.shape,np.uint8)
@@ -229,7 +217,7 @@ class ShapeDetector:
 
                 c = diff*255 #intensity
                 diffs.append(diff)
-                cv2.line(mask, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
+                cv2.line(black_img1, tuple(prev[0]), tuple(nxt[0]), (c,c,c), thickness=1, lineType=8, shift=0)
                 previous_gradient = gradient
 
         mmax = []
@@ -244,7 +232,7 @@ class ShapeDetector:
                 # compute the gradient diffs of the max points again and find the inflection point
                 mmax.append(j)
 
-                cv2.circle(mask, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
+                cv2.circle(black_img1, tuple(cnt[j+1][0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
 
 
         # compute the gradient between the max
@@ -263,6 +251,7 @@ class ShapeDetector:
                     pass
                 else:
                    key_points.append(current)
+                   cv2.circle(black_img2, tuple(current[0]),3, (255,255,255), thickness=2, lineType=8, shift=0)
         return key_points
 
     def infer_shape_from_key_points(self, key_points, cnt):
