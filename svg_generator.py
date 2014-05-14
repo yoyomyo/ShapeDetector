@@ -1,6 +1,14 @@
 __author__ = 'yoyomyo'
 
 import pdb
+
+try:
+    import svgwrite
+except ImportError:
+    # if svgwrite is not 'installed' append parent dir of __file__ to sys.path
+    import sys, os
+    sys.path.insert(0, os.path.abspath(os.path.split(os.path.abspath(__file__))[0]+'/svgwrite'))
+
 import svgwrite
 from svgwrite import px, deg
 

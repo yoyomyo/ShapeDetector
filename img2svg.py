@@ -63,8 +63,11 @@ class img2svg:
 if __name__ == '__main__':
     project = img2svg()
     if len(sys.argv) == 2:
+        project.run(sys.argv[1])
+    elif len(sys.argv) == 3:
         project.run(sys.argv[1], bool(sys.argv[2]))
     else:
-        project.run(sys.argv[1])
+        print "please run the program with at least one argument:python img2svg.py dir_of_input_images"
+
 
 
