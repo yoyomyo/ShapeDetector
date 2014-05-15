@@ -117,10 +117,9 @@ class ShapeDetector:
 
 
                 elif shape == self.TRIANGLE:
-                    # pdb.set_trace()
                     points = np.int0(points)
                     try:
-                        cv2.drawContours(color_img,[points],0,self.BLUE ,2)
+                        cv2.polylines(color_img,np.int32([points]),1,self.BLUE ,2)
                     except cv2.error:
                         print "unable to draw triangle"
                     shapes.append({
@@ -175,7 +174,7 @@ class ShapeDetector:
                         'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
                     })
                     try:
-                        cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+                        cv2.polylines(color_img,np.int32([rect]),1,self.YELLOW,2)
                     except cv2.error:
                         print "unable to draw rectangle"
         else:
@@ -185,7 +184,7 @@ class ShapeDetector:
                     'points':[tuple(pt) for pt in rect]+[tuple(rect[0])],
                 })
                 try:
-                    cv2.drawContours(color_img,[rect],0,self.YELLOW,2)
+                    cv2.polylines(color_img,np.int32([rect]),1,self.YELLOW,2)
                 except cv2.error:
                     print "unable to draw rectangle"
         return shapes, color_img
